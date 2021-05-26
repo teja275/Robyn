@@ -4,59 +4,129 @@
 # LICENSE file in the root directory of this source tree.
 
 ########################################################################
+###### Input and setup functions
+########################################################################
+
+f.inputDT <- function(data_csv_name = "de_simulated_data.csv"
+                      ,holiday_csv_name = "holidays.csv"
+                      ,csv_path = script_path
+                      ,plot_corrmat = F
+) {
+  
+  dt_input <- fread(paste0(csv_path, data_csv_name))
+  dt_holidays <- fread(paste0(csv_path, holiday_csv_name))
+  
+  if (plot_corrmat) {
+    cor_mat <- cor(dt_input[, sapply(dt_input, is.numeric), with =F])
+    corrplot(cor_mat, type = "upper", order = "hclust", sig.level = 0.05, insig = "blank",tl.cex = 0.8)
+  }
+  
+  listDT <- list(dt_input=dt_input, dt_holidays=dt_holidays, dt_mod=NULL)
+  assign("listDT", listDT, envir = .GlobalEnv)
+  #return(listDT)
+}
+
+
+f.inputParam <- function(listDT = parent.frame()$listDT
+                         ,set_dateVarName = NULL # date format must be "2020-01-01"
+                         ,set_depVarName = NULL # there should be only one dependent variable
+                         #,set_depVarType = "revenue" # "revenue" or "conversion" are allowed
+                         
+                         ,set_prophet = NULL # "trend","season", "weekday", "holiday" are provided and case-sensitive. Recommended to at least keep Trend & Holidays
+                         ,set_prophetVarSign = NULL # c("default", "positive", and "negative"). Recommend as default. Must be same length as set_prophet
+                         ,set_prophetCountry = NULL # only one country allowed once. Including national holidays for 59 countries, whose list can be found on our githut guide 
+                         
+                         ,set_baseVarName = NULL # typically competitors, price & promotion, temperature,  unemployment rate etc
+                         ,set_baseVarSign = NULL # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
+                         
+                         ,set_mediaVarName = NULL # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
+                         ,set_mediaVarSign = NULL # c("default", "positive", and "negative"), control the signs of coefficients for media variables
+                         ,set_mediaSpendName = NULL # spends must have same order and same length as set_mediaVarName
+                         
+                         ,set_factorVarName = NULL # please specify which variable above should be factor, otherwise leave empty c()
+                         
+                         ################################################################
+                         #### set global model parameters
+                         
+                         ## set cores for parallel computing
+                         ,set_cores = 1 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
+                         
+                         ## set rolling window start (only works for whole dataset for now)
+                         ,set_trainStartDate = "2015-11-23" 
+                         
+                         ## set model core features
+                         ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
+                         ,set_iter = 500  # number of allowed iterations per trial. 500 is recommended
+                         
+                         ,set_hyperOptimAlgo = "DiscreteOnePlusOne" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
+                         ,set_trial = 40 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
+                         ## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
+                         
+                         ,set_hyperBoundLocal = NULL
+                         ,set_lift = NULL
+                         
+) {
+  if (is.null(listDT)) {stop("Object listDT is missing. Must run f.inputDT first")}
+  
+  global_name <- c("thetas",  "shapes",  "scales",  "alphas",  "gammas",  "lambdas")
+  if (adstock == "geometric") {
+    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
+  } else if (adstock == "weibull") {
+    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
+  }
+  
+  if (is.null(set_hyperBoundLocal) | !identical(sort(names(set_hyperBoundLocal)), local_name)) {
+    stop("set_hyperBoundLocal must be a list and contain vectors or values named as followed: ", paste(local_name, collapse = ", "))
+  }
+  
+  
+  listParam <- list(set_dateVarName=set_dateVarName
+                    ,set_depVarName=set_depVarName
+                    #,set_depVarType=set_depVarType
+                    
+                    #,activate_prophet=activate_prophet
+                    ,set_prophet=set_prophet
+                    ,set_prophetVarSign=set_prophetVarSign 
+                    ,set_prophetCountry=set_prophetCountry
+                    
+                    #,activate_baseline=activate_baseline 
+                    ,set_baseVarName=set_baseVarName 
+                    ,set_baseVarSign=set_baseVarSign
+                    
+                    ,set_mediaVarName=set_mediaVarName
+                    ,set_mediaVarSign=set_mediaVarSign
+                    ,set_mediaSpendName=set_mediaSpendName
+                    
+                    ,set_factorVarName=set_factorVarName
+                    
+                    ,set_cores=set_cores
+                    
+                    ,set_trainStartDate=set_trainStartDate
+                    ,adstock=adstock
+                    ,set_iter=set_iter
+                    
+                    ,set_hyperOptimAlgo=set_hyperOptimAlgo 
+                    ,set_trial=set_trial 
+                    
+                    ,set_hyperBoundLocal=set_hyperBoundLocal 
+                    ,local_name=local_name
+                    #,activate_calibration=activate_calibration 
+                    ,set_lift=set_lift
+  )
+  
+  assign("listParam", listParam, envir = .GlobalEnv)
+}
+
+
+
+########################################################################
 ###### Data transformation and helper functions
 ########################################################################
 
 ################################################################
 #### Define training size guidance plot using Bhattacharyya coefficient
 
-# f.plotTrainSize <- function(plotTrainSize) {
-#   
-#   if(plotTrainSize) {
-#     if(activate_baseline & exists("set_baseVarName")) {
-#       bhattaVar <- unique(c(set_depVarName, set_baseVarName, set_mediaVarName, set_mediaSpendName))
-#     } else {stop("either set activate_baseline = F or fill set_baseVarName")}
-#     bhattaVar <- setdiff(bhattaVar, set_factorVarName)
-#     if (!("depVar" %in% names(dt_input))) {
-#       dt_bhatta <- dt_input[, bhattaVar, with=F]  # please input your data
-#     } else {
-#       bhattaVar <- str_replace(bhattaVar, set_depVarName, "depVar")
-#       dt_bhatta <- dt_input[, bhattaVar, with=F]  # please input your data
-#     }
-#     
-#     ## define bhattacharyya distance function
-#     f.bhattaCoef <- function (mu1, mu2, Sigma1, Sigma2) {
-#       Sig <- (Sigma1 + Sigma2)/2
-#       ldet.s <- unlist(determinant(Sig, logarithm = TRUE))[1]
-#       ldet.s1 <- unlist(determinant(Sigma1, logarithm = TRUE))[1]
-#       ldet.s2 <- unlist(determinant(Sigma2, logarithm = TRUE))[1]
-#       d1 <- mahalanobis(mu1, mu2, Sig, tol=1e-20)/8
-#       d2 <- 0.5 * ldet.s - 0.25 * ldet.s1 - 0.25 * ldet.s2
-#       d <- d1 + d2
-#       bhatta.coef <- 1/exp(d)
-#       return(bhatta.coef)
-#     }
-#     
-#     ## loop all train sizes
-#     bcCollect <- c()
-#     sizeVec <- seq(from=0.5, to=0.9, by=0.01)
-#     
-#     for (i in 1:length(sizeVec)) {
-#       test1 <- dt_bhatta[1:floor(nrow(dt_bhatta)*sizeVec[i]), ]
-#       test2 <- dt_bhatta[(floor(nrow(dt_bhatta)*sizeVec[i])+1):nrow(dt_bhatta), ]
-#       bcCollect[i] <- f.bhattaCoef(colMeans(test1),colMeans(test2),cov(test1),cov(test2)) 
-#     }
-#     
-#     dt_bdPlot <- data.table(train_size=sizeVec, bhatta_coef=bcCollect)
-#     
-#     print(ggplot(dt_bdPlot, aes(x=train_size, y=bhatta_coef)) + 
-#             geom_line() +
-#             labs(title = "Bhattacharyya coef. of train/test split"
-#                  ,subtitle = "Select the training size with larger bhatta_coef"))
-#   }
-# }
-
-f.plotAdstockCurves <- function(plotAdstockCurves) {
+f.plotAdstockCurves <- function(plotAdstockCurves, adstock=listParam$adstock) {
   if (plotAdstockCurves) {
     if (adstock == "weibull") {
       weibullCollect <- list()
@@ -168,42 +238,42 @@ f.plotResponseCurves <- function(plotResponseCurves) {
 ################################################################
 #### Define basic condition check function
 
-f.checkConditions <- function(dt_transform) {
+f.checkConditions <- function(dt_transform, listParam = parent.frame()$listParam) {
   
-  if (activate_prophet & !all(set_prophet %in% c("trend","season", "weekday", "holiday"))) {
-    stop("set_prophet must be 'trend', 'season', 'weekday' or 'holiday")
+  if (!all(listParam$set_prophet %in% c("trend","season", "weekday", "holiday"))) {
+    stop("listParam$set_prophet must be 'trend', 'season', 'weekday' or 'holiday")
   }
   
-  if (activate_baseline) {
-    if(length(set_baseVarName) != length(set_baseVarSign)) {stop("set_baseVarName and set_baseVarSign have to be the same length")}
+  if (!is.null(listParam$set_baseVarName)) {
+    if(length(listParam$set_baseVarName) != length(listParam$set_baseVarSign)) {stop("listParam$set_baseVarName and listParam$set_baseVarSign have to be the same length")}
   }
   
-  if (!exists("set_mediaVarName")) {
-    stop("set_mediaVarName must be specified")
+  if (is.null(listParam$set_mediaVarName)) {
+    stop("listParam$set_mediaVarName must be specified")
   } else {
-    if(length(set_mediaVarName) != length(set_mediaVarSign)) {stop("set_mediaVarName and set_mediaVarSign have to be the same length")}
-    if(!all(c(set_prophetVarSign, set_baseVarSign, set_mediaVarSign) %in% c("positive", "negative", "default"))) {
-      stop("set_prophetVarSign, set_baseVarSign & set_mediaVarSign must be 'positive', 'negative' or 'default'")}
+    if(length(listParam$set_mediaVarName) != length(listParam$set_mediaVarSign)) {stop("listParam$set_mediaVarName and listParam$set_mediaVarSign have to be the same length")}
+    if(!all(c(listParam$set_prophetVarSign, listParam$set_baseVarSign, listParam$set_mediaVarSign) %in% c("positive", "negative", "default"))) {
+      stop("listParam$set_prophetVarSign, listParam$set_baseVarSign & listParam$set_mediaVarSign must be 'positive', 'negative' or 'default'")}
   }
   
-  if(activate_calibration) {
-    if(nrow(set_lift)==0 | !exists("set_lift")) {
-      stop("please provide lift result or set activate_calibration = FALSE")
-    }
-    if ((min(set_lift$liftStartDate) < min(dt_transform$ds)) | (max(set_lift$liftEndDate) >  (max(dt_transform$ds) + dayInterval-1))) {
+  if(!is.null(listParam$set_lift)) {
+    # if(nrow(listParam$set_lift)==0 | !exists("listParam$set_lift")) {
+    #   stop("please provide lift result or set activate_calibration = FALSE")
+    # }
+    if ((min(listParam$set_lift$liftStartDate) < min(dt_transform$ds)) | (max(listParam$set_lift$liftEndDate) >  (max(dt_transform$ds) + listParam$dayInterval-1))) {
       stop("we recommend you to only use lift results conducted within your MMM input data date range")
     }
-    if (set_iter < 500 | set_trial < 80) {message("you are calibrating MMM. we recommend to run at least 500 iterations per trial and at least 80 trials at the beginning")}
+    if (listParam$set_iter < 500 | listParam$set_trial < 80) {message("you are calibrating MMM. we recommend to run at least 500 iterations per trial and at least 80 trials at the beginning")}
   } else {
-    if (set_iter < 500 | set_trial < 40) {message("\nwe recommend to run at least 500 iterations per trial and at least 40 trials at the beginning")}
+    if (listParam$set_iter < 500 | listParam$set_trial < 40) {message("\nwe recommend to run at least 500 iterations per trial and at least 40 trials at the beginning")}
   }
   
-  if((adstock %in% c("geometric", "weibull")) == F) {stop("adstock must be 'geometric' or 'weibull'")}
+  if((listParam$adstock %in% c("geometric", "weibull")) == F) {stop("adstock must be 'geometric' or 'weibull'")}
   
-  num_hp_channel <- ifelse(adstock == "geometric", 3, 4)
-  if( all(str_detect(names(set_hyperBoundLocal) ,paste0(local_name, collapse = "|")))==F | length(unique(names(set_hyperBoundLocal))) != length(set_mediaVarName)*num_hp_channel) {
+  num_hp_channel <- ifelse(listParam$adstock == "geometric", 3, 4)
+  if( all(str_detect(names(listParam$set_hyperBoundLocal) ,paste0(listParam$local_name, collapse = "|")))==F | length(unique(names(listParam$set_hyperBoundLocal))) != length(listParam$set_mediaVarName)*num_hp_channel) {
     local_names <- f.getHyperNames()
-    stop("set_hyperBoundLocal has incorrect hyperparameters. names of hyperparameters must be: \n", paste(local_names, collapse = ", "))
+    stop("listParam$set_hyperBoundLocal has incorrect hyperparameters. names of hyperparameters must be: \n", paste(local_names, collapse = ", "))
   }
   
   if(any(apply(dt_transform, 2, function(x) any(is.na(x) | is.infinite(x))))) {stop("input datafrom dt has NA or Inf")}
@@ -231,74 +301,74 @@ f.unit_format <- function(x_in) {
 ################################################################
 #### Define major input data transformation function
 
-f.inputWrangling <- function(dt_transform = dt_input) {
+f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = parent.frame()$listParam) {
   
   dt_transform <- copy(dt_transform)
-  setnames(dt_transform, set_dateVarName, "ds", skip_absent = T)
+  setnames(dt_transform, listParam$set_dateVarName, "ds", skip_absent = T)
   dt_transform <- dt_transform[, ':='(ds= as.Date(ds))][order(ds)]
   
-  setnames(dt_transform, set_depVarName, "depVar", skip_absent = T) #; set_depVarName <- "depVar"
-  #indepName <- c(set_prophet, set_baseVarName, set_mediaVarName)
+  setnames(dt_transform, listParam$set_depVarName, "depVar", skip_absent = T) #; listParam$set_depVarName <- "depVar"
+  #indepName <- c(listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName)
   
   ## check date format
   tryCatch({
     dateCheck <- as.Date(dt_transform$ds)
-    dateCheckStart <- as.Date(set_trainStartDate)
+    dateCheckStart <- as.Date(listParam$set_trainStartDate)
   },
   error= function(cond) {
-    stop("input date variable and set_trainStartDate should have format '2020-01-01'")
+    stop("input date variable and listParam$set_trainStartDate should have format '2020-01-01'")
   })
   
   if (any(dateCheckStart< min(dt_transform$ds), dateCheckStart> max(dt_transform$ds))) {
-    stop("set_trainStartDate must be between ", min(dt_transform$ds) ," and ",max(dt_transform$ds))
+    stop("listParam$set_trainStartDate must be between ", min(dt_transform$ds) ," and ",max(dt_transform$ds))
   }
   
   ## check variables existence
   
-  if (!activate_prophet) {
-    assign("set_prophet", NULL, envir = .GlobalEnv)
-    assign("set_prophetVarSign", NULL, envir = .GlobalEnv)
-  }
+  # if (!activate_prophet) {
+  #   assign("set_prophet", NULL, envir = .GlobalEnv)
+  #   assign("set_prophetVarSign", NULL, envir = .GlobalEnv)
+  # }
   
-  if (!activate_baseline) {
-    assign("set_baseVarName", NULL, envir = .GlobalEnv)
-    assign("set_baseVarSign", NULL, envir = .GlobalEnv)
-  }
+  # if (!activate_baseline) {
+  #   assign("set_baseVarName", NULL, envir = .GlobalEnv)
+  #   assign("set_baseVarSign", NULL, envir = .GlobalEnv)
+  # }
   
   
-  if (!activate_calibration) {
-    assign("set_lift", NULL, envir = .GlobalEnv)
-  }
+  # if (!activate_calibration) {
+  #   assign("set_lift", NULL, envir = .GlobalEnv)
+  # }
   
-  if (!exists("set_mediaSpendName")) {stop("set_mediaSpendName must be specified")
-  } else if(length(set_mediaVarName) != length(set_mediaSpendName)) {
-    stop("set_mediaSpendName and set_mediaVarName have to be the same length and same order")}
+  if (is.null(listParam$set_mediaSpendName)) {stop("listParam$set_mediaSpendName must be specified")
+  } else if(length(listParam$set_mediaVarName) != length(listParam$set_mediaSpendName)) {
+    stop("listParam$set_mediaSpendName and listParam$set_mediaVarName have to be the same length and same order")}
   
   
   #trainSize <- round(nrow(dt_transform)* set_modTrainSize)
-  #dt_train <- dt_transform[1:trainSize, set_mediaVarName, with =F]
-  trainStartWhich <- which.min(abs(difftime(as.Date(dt_transform$ds), as.Date(set_trainStartDate), units = "days")))
-  dt_train <- dt_transform[trainStartWhich:nrow(dt_transform), set_mediaVarName, with =F]
+  #dt_train <- dt_transform[1:trainSize, listParam$set_mediaVarName, with =F]
+  trainStartWhich <- which.min(abs(difftime(as.Date(dt_transform$ds), as.Date(listParam$set_trainStartDate), units = "days")))
+  dt_train <- dt_transform[trainStartWhich:nrow(dt_transform), listParam$set_mediaVarName, with =F]
   train_all0 <- colSums(dt_train)==0
   if(any(train_all0)) {
     stop("These media channels contains only 0 within training period ",dt_transform$ds[trainStartWhich], " to ", max(dt_transform$ds), ": ", paste(names(dt_train)[train_all0], collapse = ", ")
-         , " \nRecommendation: adapt set_trainStartDate, remove or combine these channels")
+         , " \nRecommendation: adapt listParam$set_trainStartDate, remove or combine these channels")
   }
   
   
   #hypName <- c("thetas", "shapes", "scales", "alphas", "gammas", "lambdas") # defind hyperparameter names
   dayInterval <- as.integer(difftime(sort(unique(dt_transform$ds))[2], sort(unique(dt_transform$ds))[1], units = "days"))
   intervalType <- if(dayInterval==1) {"day"} else if (dayInterval==7) {"week"} else if (dayInterval %in% 28:31) {"month"} else {stop("input data has to be daily, weekly or monthly")}
-  assign("dayInterval", dayInterval, envir = .GlobalEnv)
-  mediaVarCount <- length(set_mediaVarName)
+  #assign("dayInterval", dayInterval, envir = .GlobalEnv)
+  mediaVarCount <- length(listParam$set_mediaVarName)
   
   ################################################################
   #### model exposure metric from spend
   
-  mediaCostFactor <- unlist(dt_input[, lapply(.SD, sum), .SDcols = set_mediaSpendName] / dt_input[, lapply(.SD, sum), .SDcols = set_mediaVarName])
-  names(mediaCostFactor) <- set_mediaVarName
-  costSelector <- !(set_mediaSpendName == set_mediaVarName)
-  names(costSelector) <- set_mediaVarName
+  mediaCostFactor <- unlist(listDT$dt_input[, lapply(.SD, sum), .SDcols = listParam$set_mediaSpendName] / listDT$dt_input[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName])
+  names(mediaCostFactor) <- listParam$set_mediaVarName
+  costSelector <- !(listParam$set_mediaSpendName == listParam$set_mediaVarName)
+  names(costSelector) <- listParam$set_mediaVarName
   
   if (any(costSelector)) {
     modNLSCollect <- list()
@@ -306,7 +376,7 @@ f.inputWrangling <- function(dt_transform = dt_input) {
     plotNLSCollect <- list()
     for (i in 1:mediaVarCount) {
       if (costSelector[i]) {
-        dt_spendModInput <- dt_input[, c(set_mediaSpendName[i],set_mediaVarName[i]), with =F]
+        dt_spendModInput <- listDT$dt_input[, c(listParam$set_mediaSpendName[i],listParam$set_mediaVarName[i]), with =F]
         setnames(dt_spendModInput, names(dt_spendModInput), c("spend", "exposure"))
         #dt_spendModInput <- dt_spendModInput[spend !=0 & exposure != 0]
         
@@ -331,12 +401,13 @@ f.inputWrangling <- function(dt_transform = dt_input) {
         
         modNLS <- tryCatch(
           {
-            nlsStartVal <- list(Vmax = dt_spendModInput[, max(exposure)/2], Km = dt_spendModInput[, max(exposure)])
+            nlsStartVal <- list(Vmax = dt_spendModInput[, max(exposure)], Km = dt_spendModInput[, max(exposure)/2])
             suppressWarnings(modNLS <- nlsLM(exposure ~ Vmax * spend/(Km + spend), #Michaelis-Menten model Vmax * spend/(Km + spend)
                                       data = dt_spendModInput,
                                       start = nlsStartVal
                                       ,control = nls.control(warnOnly = T)))
           },
+          
           error=function(cond) {
             nlsStartVal <- list(Vmax=1, Km=1)
             suppressWarnings(modNLS <- nlsLM(exposure ~ Vmax * spend/(Km + spend), #Michaelis-Menten model Vmax * spend/(Km + spend)
@@ -365,7 +436,7 @@ f.inputWrangling <- function(dt_transform = dt_input) {
         rsq_lm <- f.rsq(dt_spendModInput$exposure, yhatLM) #exposure = v  * spend / (k + spend)
         costSelector[i] <- rsq_nls > rsq_lm
         
-        modNLSCollect[[set_mediaVarName[i]]] <- data.table(channel = set_mediaVarName[i],
+        modNLSCollect[[listParam$set_mediaVarName[i]]] <- data.table(channel = listParam$set_mediaVarName[i],
                                                            Vmax = modNLSSum$coefficients[1,1],
                                                            Km = modNLSSum$coefficients[2,1],
                                                            aic_nls = AIC(modNLS),
@@ -377,7 +448,7 @@ f.inputWrangling <- function(dt_transform = dt_input) {
                                                            coef_lm = coef(modLMSum)[1]
         )
         
-        dt_plotNLS <- data.table(channel = set_mediaVarName[i],
+        dt_plotNLS <- data.table(channel = listParam$set_mediaVarName[i],
                                  yhatNLS = if(costSelector[i]) {yhatNLS} else {yhatLM},
                                  yhatLM = yhatLM,
                                  y = dt_spendModInput$exposure,
@@ -385,13 +456,13 @@ f.inputWrangling <- function(dt_transform = dt_input) {
         dt_plotNLS <- melt.data.table(dt_plotNLS, id.vars = c("channel", "y", "x"), variable.name = "models", value.name = "yhat")
         dt_plotNLS[, models:= str_remove(tolower(models), "yhat")]
         
-        yhatCollect[[set_mediaVarName[i]]] <- dt_plotNLS
+        yhatCollect[[listParam$set_mediaVarName[i]]] <- dt_plotNLS
         
         # create plot
-        plotNLSCollect[[set_mediaVarName[i]]] <- ggplot(dt_plotNLS, aes(x=x, y=y, color = models)) +
+        plotNLSCollect[[listParam$set_mediaVarName[i]]] <- ggplot(dt_plotNLS, aes(x=x, y=y, color = models)) +
           geom_point() +
           geom_line(aes(y=yhat, x=x, color = models)) +
-          labs(subtitle = paste0("y=",set_mediaVarName[i],", x=", set_mediaSpendName[i],
+          labs(subtitle = paste0("y=",listParam$set_mediaVarName[i],", x=", listParam$set_mediaSpendName[i],
                                  "\nnls: aic=", round(AIC(if(costSelector[i]) {modNLS} else {modLM}),0), ", rsq=", round(if(costSelector[i]) {rsq_nls} else {rsq_lm},4),
                                  "\nlm: aic= ", round(AIC(modLM),0), ", rsq=", round(rsq_lm,4)),
                x = "spend",
@@ -405,78 +476,75 @@ f.inputWrangling <- function(dt_transform = dt_input) {
     modNLSCollect <- rbindlist(modNLSCollect)
     yhatNLSCollect <- rbindlist(yhatCollect)
     yhatNLSCollect[, ds:= rep(dt_transform$ds, nrow(yhatNLSCollect)/nrow(dt_transform))]
-    assign("plotNLSCollect", plotNLSCollect, envir = .GlobalEnv)
-    assign("modNLSCollect", modNLSCollect, envir = .GlobalEnv)
-    assign("yhatNLSCollect", yhatNLSCollect, envir = .GlobalEnv)
+    #assign("plotNLSCollect", plotNLSCollect, envir = .GlobalEnv)
+    #assign("modNLSCollect", modNLSCollect, envir = .GlobalEnv)
+    #assign("yhatNLSCollect", yhatNLSCollect, envir = .GlobalEnv)
     
   }
   
-  getSpendSum <- dt_input[, lapply(.SD, sum), .SDcols=set_mediaSpendName]
-  names(getSpendSum) <- set_mediaVarName
-  getSpendSum <- suppressWarnings(melt.data.table(getSpendSum, measure.vars= set_mediaVarName, variable.name = "rn", value.name = "spend"))
+  getSpendSum <- listDT$dt_input[, lapply(.SD, sum), .SDcols=listParam$set_mediaSpendName]
+  names(getSpendSum) <- listParam$set_mediaVarName
+  getSpendSum <- suppressWarnings(melt.data.table(getSpendSum, measure.vars= listParam$set_mediaVarName, variable.name = "rn", value.name = "spend"))
   
-  assign("mediaCostFactor", mediaCostFactor, envir = .GlobalEnv)
-  assign("costSelector", costSelector, envir = .GlobalEnv)
-  assign("getSpendSum", getSpendSum, envir = .GlobalEnv)
+  #assign("mediaCostFactor", mediaCostFactor, envir = .GlobalEnv)
+  #assign("costSelector", costSelector, envir = .GlobalEnv)
+  #assign("getSpendSum", getSpendSum, envir = .GlobalEnv)
   
   
   ################################################################
   #### clean & aggregate data
   
-  all_name <- unique(c("ds", "depVar", set_prophet, set_baseVarName, set_mediaVarName #, set_keywordsVarName, set_mediaSpendName
+  all_name <- unique(c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName #, set_keywordsVarName, listParam$set_mediaSpendName
   ))
-  all_mod_name <- c("ds", "depVar", set_prophet, set_baseVarName, set_mediaVarName)
+  all_mod_name <- c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName)
   if(!identical(all_name, all_mod_name)) {stop("Input variables must have unique names")}
   
   ## transform all factor variables
-  if (exists("set_factorVarName")) {
-    if (length(set_factorVarName)>0) {
-      #set_factorVarName <- toupper(set_factorVarName)
-      dt_transform[, (set_factorVarName):= as.factor(get(set_factorVarName)) ]
-    }
-  } else {
-    assign("set_factorVarName", NULL, envir = .GlobalEnv)
-  }
+
+  if (length(listParam$set_factorVarName)>0) {
+    #set_factorVarName <- toupper(set_factorVarName)
+    dt_transform[, (listParam$set_factorVarName):= as.factor(get(listParam$set_factorVarName)) ]
+  } 
   
   ################################################################
   #### Obtain prophet trend, seasonality and changepoints
   
-  if (activate_prophet) {
+  if ( !is.null(listParam$set_prophet) ) {
     
-    if(length(set_prophet) != length(set_prophetVarSign)) {stop("set_prophet and set_prophetVarSign have to be the same length")}
-    if(any(length(set_prophet)==0, length(set_prophetVarSign)==0)) {stop("if activate_prophet == TRUE, set_prophet and set_prophetVarSign must to specified")}
-    if(!(set_country %in% dt_holidays$country)) {stop("set_country must be already included in the holidays.csv and as ISO 3166-1 alpha-2 abbreviation")}
+    if(length(listParam$set_prophet) != length(listParam$set_prophetVarSign)) {stop("listParam$set_prophet and listParam$set_prophetVarSign have to be the same length")}
+    if(any(length(listParam$set_prophet)==0, length(listParam$set_prophetVarSign)==0)) {stop("listParam$set_prophet and listParam$set_prophetVarSign must be both specified")}
+    if(!(listParam$set_prophetCountry %in% listDT$dt_holidays$country)) {stop("listParam$set_prophetCountry must be already included in the holidays.csv and as ISO 3166-1 alpha-2 abbreviation")}
     
     recurrance <- dt_transform[, .(ds = ds, y = depVar)]
-    use_trend <- any(str_detect("trend", set_prophet))
-    use_season <- any(str_detect("season", set_prophet))
-    use_weekday <- any(str_detect("weekday", set_prophet))
-    use_holiday <- any(str_detect("holiday", set_prophet))
+    use_trend <- any(str_detect("trend", listParam$set_prophet))
+    use_season <- any(str_detect("season", listParam$set_prophet))
+    use_weekday <- any(str_detect("weekday", listParam$set_prophet))
+    use_holiday <- any(str_detect("holiday", listParam$set_prophet))
     
     if (intervalType == "day") {
       
-      holidays <- dt_holidays
+      holidays <- listDT$dt_holidays
       
     } else if (intervalType == "week") {
       
       weekStartInput <- weekdays(dt_transform[1, ds])
       weekStartMonday <- if(weekStartInput=="Monday") {TRUE} else if (weekStartInput=="Sunday") {FALSE} else {stop("week start has to be Monday or Sunday")}
-      dt_holidays[, dsWeekStart:= cut(as.Date(ds), breaks = intervalType, start.on.monday = weekStartMonday)]
-      holidays <- dt_holidays[, .(ds=dsWeekStart, holiday, country, year)]
+      listDT$dt_holidays[, dsWeekStart:= cut(as.Date(ds), breaks = intervalType, start.on.monday = weekStartMonday)]
+      holidays <- listDT$dt_holidays[, .(ds=dsWeekStart, holiday, country, year)]
       holidays <- holidays[, lapply(.SD, paste0, collapse="#"), by = c("ds", "country", "year"), .SDcols = "holiday"]
       
     } else if (intervalType == "month") {
       
       monthStartInput <- all(day(dt_transform[, ds]) ==1)
       if (monthStartInput==FALSE) {stop("monthly data should have first day of month as datestampe, e.g.'2020-01-01' ")}
-      dt_holidays[, dsMonthStart:= cut(as.Date(ds), intervalType)]
-      holidays <- dt_holidays[, .(ds=dsMonthStart, holiday, country, year)]
+      listDT$dt_holidays[, dsMonthStart:= cut(as.Date(ds), intervalType)]
+      holidays <- listDT$dt_holidays[, .(ds=dsMonthStart, holiday, country, year)]
       holidays <- holidays[, lapply(.SD, paste0, collapse="#"), by = c("ds", "country", "year"), .SDcols = "holiday"]
       
     }
     
     modelRecurrance<- prophet(recurrance
-                             ,holidays = if(use_holiday) {holidays[country==set_country]} else {NULL}
+                             ,holidays = if(use_holiday) {holidays[country==listParam$set_prophetCountry]} else {NULL}
                              ,yearly.seasonality = use_season
                              ,weekly.seasonality = use_weekday
                              ,daily.seasonality= F
@@ -489,22 +557,22 @@ f.inputWrangling <- function(dt_transform = dt_input) {
     forecastRecurrance <- predict(modelRecurrance, dt_transform[, "ds", with =F])
     
     # if (use_regressor) {
-    #   m.recurrance <- cbind(recurrance, dt_transform[, c(set_baseVarName, set_mediaVarName), with =F])
-    #   modelRecurrance <- prophet(holidays = if(use_holiday) {holidays[country==set_country]} else {NULL}
+    #   m.recurrance <- cbind(recurrance, dt_transform[, c(listParam$set_baseVarName, listParam$set_mediaVarName), with =F])
+    #   modelRecurrance <- prophet(holidays = if(use_holiday) {holidays[country==listParam$set_prophetCountry]} else {NULL}
     #                 ,yearly.seasonality = use_season
     #                 ,weekly.seasonality = use_weekday 
     #                 ,daily.seasonality= F)
-    #   for (addreg in c(set_baseVarName, set_mediaVarName)) {
+    #   for (addreg in c(listParam$set_baseVarName, listParam$set_mediaVarName)) {
     #     modelRecurrance <- add_regressor(modelRecurrance, addreg)
     #   }
     #   modelRecurrance <- fit.prophet(modelRecurrance, m.recurrance)
-    #   forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",set_baseVarName, set_mediaVarName), with =F])
+    #   forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",listParam$set_baseVarName, listParam$set_mediaVarName), with =F])
     #   prophet_plot_components(modelRecurrance, forecastRecurrance)
     # }
     
     
-    assign("modelRecurrance", modelRecurrance, envir = .GlobalEnv)
-    assign("forecastRecurrance", forecastRecurrance, envir = .GlobalEnv)
+    #assign("modelRecurrance", modelRecurrance, envir = .GlobalEnv)
+    #assign("forecastRecurrance", forecastRecurrance, envir = .GlobalEnv)
     #plot(modelRecurrance, forecastRecurrance)
     #prophet_plot_components(modelRecurrance, forecastRecurrance, render_plot = T)
     
@@ -536,20 +604,33 @@ f.inputWrangling <- function(dt_transform = dt_input) {
   #dt <- dt[, all_name, with = F]
   dt_transform <- dt_transform[, all_mod_name, with = F]
   
-  f.checkConditions(dt_transform)
+  listDT$dt_mod <- dt_transform
+  listDT[['forecastRecurrance']] <- forecastRecurrance
+  listDT[['modelRecurrance']] <- modelRecurrance  
+  #listParam[['getSpendSum']] <- getSpendSum
+  listParam[['modNLSCollect']] <- modNLSCollect
+  listParam[['plotNLSCollect']] <- plotNLSCollect  
+  listParam[['yhatNLSCollect']] <- yhatNLSCollect  
+  listParam[['costSelector']] <- costSelector  
+  listParam[['mediaCostFactor']] <- mediaCostFactor  
+  listParam[['dayInterval']] <- dayInterval  
   
-  return(dt_transform)
+  f.checkConditions(dt_transform = dt_transform, listParam = listParam)
+  
+  assign("listDT", listDT, envir = .GlobalEnv)
+  assign("listParam", listParam, envir = .GlobalEnv)
+  #return(dt_transform)
 }
 
 ################################################################
 #### Define hyperparameter names extraction function
 
-f.getHyperNames <- function() {
+f.getHyperNames <- function(listParam = parent.frame()$listParam) {
   global_name <- c("thetas",  "shapes",  "scales",  "alphas",  "gammas",  "lambdas")
-  if (adstock == "geometric") {
-    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
-  } else if (adstock == "weibull") {
-    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
+  if (listParam$adstock == "geometric") {
+    local_name <- sort(apply(expand.grid(listParam$set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
+  } else if (listParam$adstock == "weibull") {
+    local_name <- sort(apply(expand.grid(listParam$set_mediaVarName, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
   }
   return(local_name)
 }
@@ -590,7 +671,7 @@ f.adstockWeibull <- function(x, shape , scale) {
 ################################################
 #### Define transformation function
 
-f.transformation <- function (x, theta= NULL, shape= NULL, scale= NULL, alpha=NULL, gamma=NULL, alternative = adstock, stage = 3) {
+f.transformation <- function (x, theta= NULL, shape= NULL, scale= NULL, alpha=NULL, gamma=NULL, alternative = listParam$adstock, stage = 3) {
   
   ## step 1: add decay rate
   
@@ -668,7 +749,7 @@ f.lambdaRidge <- function(x, y, seq_len = 100, lambda_min_ratio = 0.0001) {
 ################################################
 #### Define model decomposition function
 
-f.decomp <- function(coefs, dt_modAdstocked, x, y_pred, i) {
+f.decomp <- function(coefs, dt_modAdstocked, x, y_pred, i, dt_mod) {
   
   ## input for decomp
   y <- dt_modAdstocked$depVar
@@ -703,6 +784,7 @@ f.decomp <- function(coefs, dt_modAdstocked, x, y_pred, i) {
   #xDecompOutAgg.scaled <- sum(xDecompOutAgg)*xDecompOutAggPerc.scaled
   
   coefsOut <- data.table(coefs, keep.rownames = T)
+  coefsOutCat <- copy(coefsOut)
   coefsOut[, rn := if (length(indepVarCat) == 0) {rn} else {sapply(indepVarCat, function(x) str_replace(coefsOut$rn, paste0(x,".*"), x))}]
   coefsOut <- coefsOut[, .(coef = mean(s0)), by = rn]
   
@@ -715,7 +797,7 @@ f.decomp <- function(coefs, dt_modAdstocked, x, y_pred, i) {
                                              ))
   decompOutAgg[, pos:= xDecompAgg>=0]
   
-  decompCollect <- list(xDecompVec= xDecompOut, xDecompVec.scaled=xDecompOut.scaled, xDecompAgg = decompOutAgg)
+  decompCollect <- list(xDecompVec= xDecompOut, xDecompVec.scaled=xDecompOut.scaled, xDecompAgg = decompOutAgg, coefsOutCat=coefsOutCat)
   
   return(decompCollect)
 } ## decomp end
@@ -723,9 +805,9 @@ f.decomp <- function(coefs, dt_modAdstocked, x, y_pred, i) {
 ################################################
 #### Define lift calibration function
 
-f.calibrateLift <- function(decompCollect, set_lift) {
+f.calibrateLift <- function(decompCollect, set_lift=listParam$set_lift) {
   
-  check_set_lift <- any(sapply(set_lift$channel, function(x) any(str_detect(x, set_mediaVarName)))==F) #check if any lift channel doesnt have media var
+  check_set_lift <- any(sapply(set_lift$channel, function(x) any(str_detect(x, listParam$set_mediaVarName)))==F) #check if any lift channel doesnt have media var
   if (check_set_lift) {stop("set_lift channels must have media variable")}
   ## prep lift input
   getLiftMedia <- unique(set_lift$channel)
@@ -832,11 +914,13 @@ f.refit <- function(x_train, y_train, lambda, lower.limits, upper.limits) {
 #### Define major mmm function
 
 f.mmm <- function(...
-                  , set_iter = 100
-                  , set_cores = 6
+                  , listParam = parent.frame()$listParam
+                  , listDT = parent.frame()$listDT
+                  , set_iter = parent.frame()$listParam$set_iter
+                  #, set_cores = 1
                   , lambda.n = 100
                   , fixed.out = F
-                  , optimizer_name = "DiscreteOnePlusOne" # c("DiscreteOnePlusOne", "DoubleFastGADiscreteOnePlusOne", "TwoPointsDE", "DE")
+                  #, optimizer_name = "DiscreteOnePlusOne" # c("DiscreteOnePlusOne", "DoubleFastGADiscreteOnePlusOne", "TwoPointsDE", "DE")
                   , fixed.lambda = NULL
 ) {
   
@@ -846,7 +930,7 @@ f.mmm <- function(...
   hypParamSamName <- f.getHyperNames()
   
   if (fixed.out==F) {
-    input.collect <- unlist(list(...), recursive = F) # input.collect <- set_hyperBoundLocal
+    input.collect <- unlist(list(...), recursive = F) # input.collect <- listParam$set_hyperBoundLocal
     
     # sort hyperparameter list by name
     hyper_bound_local <- list()
@@ -869,15 +953,15 @@ f.mmm <- function(...
     num_hyppar_fixed <- length(hyper_bound_local_fixed)
     
     #hyper_bound_local_fixed <- list(print_S_alphas = 1 , print_S_gammas = 0.5)
-    if (set_cores >1) {
-      hyper_bound_local_fixed_dt <- data.table(sapply(hyper_bound_local_fixed, function(x) rep(x, set_cores)))
+    if (listParam$set_cores >1) {
+      hyper_bound_local_fixed_dt <- data.table(sapply(hyper_bound_local_fixed, function(x) rep(x, listParam$set_cores)))
     } else {
       hyper_bound_local_fixed_dt <- as.data.table(matrix(hyper_bound_local_fixed, nrow = 1))
       names(hyper_bound_local_fixed_dt) <- hyper_bound_local_fixed_name
     }
     
   } else {
-    #input.collect <- set_hyperBoundLocal
+    #input.collect <- listParam$set_hyperBoundLocal
     #input.fixed <- dt_hyperResult
     input.fixed <- list(...)[[1]]
     num_hyppar_ng <- length(hypParamSamName)
@@ -888,31 +972,23 @@ f.mmm <- function(...
   }
   
   ################################################
-  #### Get spend share
-  
-  trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(set_trainStartDate), units = "days")))
-  dt_inputTrain <- dt_input[dt_input[, rank(.SD), .SDcols = set_dateVarName]]
-  dt_inputTrain <- dt_inputTrain[trainStartWhich:nrow(dt_inputTrain)]
-  dt_spendShare <- dt_inputTrain[, .(rn = set_mediaVarName,
-                                     total_spend = sapply(.SD, sum),
-                                     mean_spend = sapply(.SD, function(x) mean(x[x>0]))), .SDcols=set_mediaSpendName]
-  dt_spendShare[, ':='(spend_share = mean_spend / sum(mean_spend))]
-  
-  ################################################
   #### Setup environment
   
+  if (is.null(listDT$dt_mod)) {stop("Run listDT$dt_mod <- f.featureEngineering() first to get the dt_mod")}
+  
   ## get environment for parallel backend
-  dt_mod <- dt_mod
-  set_mediaVarName <- set_mediaVarName
-  adstock <- adstock
+  dt_mod <- listDT$dt_mod
+  set_mediaVarName <- listParam$set_mediaVarName
+  adstock <- listParam$adstock
   #set_modTrainSize <- set_modTrainSize
-  activate_calibration <- activate_calibration
-  set_baseVarSign <- set_baseVarSign
-  set_mediaVarSign <- set_mediaVarSign
-  activate_prophet <- activate_prophet
-  set_prophetVarSign <- set_prophetVarSign
-  set_factorVarName <- set_factorVarName
-  set_lift <- set_lift
+  #activate_calibration <- activate_calibration
+  set_baseVarSign <- listParam$set_baseVarSign
+  set_mediaVarSign <- listParam$set_mediaVarSign
+  #activate_prophet <- activate_prophet
+  set_prophetVarSign <- listParam$set_prophetVarSign
+  #set_factorVarName <- listParam$set_factorVarName
+  set_lift <- listParam$set_lift
+  optimizer_name <- listParam$set_hyperOptimAlgo
   
   ng <- import("nevergrad")
   
@@ -932,6 +1008,17 @@ f.mmm <- function(...
   # optimizer_name <- "ScrHammersleySearch"
   
   ################################################
+  #### Get spend share
+  
+  trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listParam$set_trainStartDate), units = "days")))
+  dt_inputTrain <- listDT$dt_input[listDT$dt_input[, rank(.SD), .SDcols = listParam$set_dateVarName]]
+  dt_inputTrain <- dt_inputTrain[trainStartWhich:nrow(dt_inputTrain)]
+  dt_spendShare <- dt_inputTrain[, .(rn = listParam$set_mediaVarName,
+                                     total_spend = sapply(.SD, sum),
+                                     mean_spend = sapply(.SD, function(x) mean(x[x>0]))), .SDcols=listParam$set_mediaSpendName]
+  dt_spendShare[, ':='(spend_share = mean_spend / sum(mean_spend))]
+  
+  ################################################
   #### Start Nevergrad loop
   
   t0 <- Sys.time()
@@ -939,7 +1026,7 @@ f.mmm <- function(...
   ## set iterations
   if (fixed.out == F) {
     iterTotal <- set_iter
-    iterPar <- set_cores
+    iterPar <- listParam$set_cores
   } else if (num_hyppar_ng==0 & fixed.out == T) {
     iterTotal <- 1
     iterPar <- 1
@@ -947,9 +1034,9 @@ f.mmm <- function(...
     iterTotal <- nrow(input.fixed)
     iterPar <- nrow(input.fixed)
   }
-  iterNG <-  ifelse(fixed.out == F, ceiling(set_iter/set_cores), 1)
+  iterNG <-  ifelse(fixed.out == F, ceiling(set_iter/listParam$set_cores), 1)
   
-  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_local_ng),"hyperparameters,",lambda.n,"-fold ridge x-validation using",set_cores,"cores...\n")
+  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_local_ng),"hyperparameters,",lambda.n,"-fold ridge x-validation using",listParam$set_cores,"cores...\n")
   
   ## start Nevergrad optimiser
   
@@ -957,8 +1044,8 @@ f.mmm <- function(...
     my_tuple <- tuple(num_hyppar_ng)
     instrumentation <- ng$p$Array(shape=my_tuple)
     instrumentation$set_bounds(0., 1.)
-    optimizer <-  ng$optimizers$registry[optimizer_name](instrumentation, budget=iterTotal, num_workers=set_cores)
-    if (activate_calibration==F) {
+    optimizer <-  ng$optimizers$registry[optimizer_name](instrumentation, budget=iterTotal, num_workers=listParam$set_cores)
+    if (is.null(set_lift)) {
       optimizer$tell(ng$p$MultiobjectiveReference(), tuple(1.0, 1.0))
     } else {
       optimizer$tell(ng$p$MultiobjectiveReference(), tuple(1.0, 1.0, 1.0))
@@ -1021,7 +1108,7 @@ f.mmm <- function(...
       decomp.rssd.collect <- c()
       best_mape <- Inf
       closeAllConnections()
-      registerDoParallel(set_cores)  #registerDoParallel(cores=set_cores)
+      registerDoParallel(listParam$set_cores)  #registerDoParallel(cores=listParam$set_cores)
       getDoParWorkers()
       doparCollect <- foreach (
         i = 1:iterPar
@@ -1082,7 +1169,7 @@ f.mmm <- function(...
         #trainSize <- round(nrow(dt_modAdstocked)* set_modTrainSize)
         #dt_train <- dt_modAdstocked[1:trainSize]
         #dt_test <- dt_modAdstocked[(trainSize+1):nrow(dt_modAdstocked)]
-        #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(set_trainStartDate), units = "days")))
+        #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listParam$set_trainStartDate), units = "days")))
         dt_train <- dt_modAdstocked[trainStartWhich:nrow(dt_modAdstocked)]
         
         ## contrast matrix because glmnet does not treat categorical variables
@@ -1152,7 +1239,7 @@ f.mmm <- function(...
           #hypParamSam["lambdas"] <- cvmod$lambda.1se
           #hypParamSamName <- names(hypParamSam)
           
-          decompCollect <- f.decomp(coefs=mod_out$coefs, dt_train, x_train, y_pred=mod_out$y_pred, i)
+          decompCollect <- f.decomp(coefs=mod_out$coefs, dt_modAdstocked=dt_train, x=x_train, y_pred=mod_out$y_pred, i=i, dt_mod=dt_mod)
           nrmse <- mod_out$nrmse_train
           mape <- 0
           
@@ -1160,9 +1247,9 @@ f.mmm <- function(...
           #####################################
           #### get calibration mape
           
-         if (activate_calibration == T) {
+         if (!is.null(set_lift)) {
 
-            liftCollect <- f.calibrateLift(decompCollect, set_lift)
+            liftCollect <- f.calibrateLift(decompCollect=decompCollect, set_lift=set_lift)
             mape <- liftCollect[, mean(mape_lift)]
           
         }
@@ -1224,7 +1311,7 @@ f.mmm <- function(...
                                                        ,lambda=lambda
                                                        ,iterPar= i
                                                        ,iterNG = lng)] ,
-          liftCalibration = if (activate_calibration) {liftCollect[, ':='(mape = mape
+          liftCalibration = if (!is.null(set_lift)) {liftCollect[, ':='(mape = mape
                                                                           ,nrmse = nrmse
                                                                           ,decomp.rssd = decomp.rssd
                                                                           ,adstock.ssisd = adstock.ssisd
@@ -1268,7 +1355,7 @@ f.mmm <- function(...
       #### Nevergrad tells objectives
       
       if (fixed.out == F) {
-        if (activate_calibration == F) {
+        if (is.null(set_lift)) {
           for (co in 1:iterPar) {
             optimizer$tell(nevergrad_hp[[co]], tuple(nrmse.coolect[co], decomp.rssd.coolect[co])) 
           }
@@ -1296,7 +1383,7 @@ f.mmm <- function(...
   if (fixed.out == F) {
     pareto_results<-transpose(rbind(as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$value[],4))),
                                     as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$losses[],4)))))
-    if (activate_calibration == F) {
+    if (is.null(set_lift)) {
       pareto_results_names<-setnames(pareto_results, old=names(pareto_results), new=c(hyper_bound_local_ng_name,"nrmse", "decomp.rssd") )
       pareto_results_ordered<-setorder(pareto_results_names, "nrmse", "decomp.rssd")
     } else {
@@ -1315,7 +1402,7 @@ f.mmm <- function(...
     resultHypParam = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$resultHypParam))}))[order(nrmse)],
     xDecompVec = if (fixed.out==T) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompVec))}))[order(nrmse, ds)]} else {NULL},
     xDecompAgg =   rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompAgg))}))[order(nrmse)],
-    liftCalibration = if(activate_calibration) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$liftCalibration))}))[order(mape, liftMedia, liftStart)]} else {NULL},
+    liftCalibration = if(!is.null(set_lift)) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$liftCalibration))}))[order(mape, liftMedia, liftStart)]} else {NULL},
     decompSpendDist = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$decompSpendDist))}))[order(nrmse)],
     #mape = unlist(lapply(doparCollect, function(x) x$mape)),
     #iterRS = unlist(lapply(doparCollect, function(x) x$iterRS)),
@@ -1343,14 +1430,19 @@ f.mmm <- function(...
 #### Define f.robyn, the main trial looping and plotting function
 
 
-f.robyn <- function(set_hyperBoundLocal
-                    ,optimizer_name = set_hyperOptimAlgo
-                    ,set_trial = set_trial 
-                    ,set_cores = set_cores
+f.robyn <- function(listParam = parent.frame()$listParam
+                    ,listDT = parent.frame()$listDT
+                    #,set_hyperBoundLocal = set_hyperBoundLocal
+                    #,optimizer_name = set_hyperOptimAlgo
+                    #,set_trial = set_trial 
+                    #,set_cores = set_cores
                     ,plot_folder = getwd()
                     ,fixed.out = F
                     ,fixed.hyppar.dt = NULL
-                    ,pareto_fronts = c(1,2,3)) {
+                    ,pareto_fronts = 3) {
+  
+  #####################################
+  #### Set local environment
   
   t0 <- Sys.time()
   
@@ -1359,10 +1451,12 @@ f.robyn <- function(set_hyperBoundLocal
     message("provided plot_folder doesn't exist. Using default plot_folder = getwd(): ", getwd())
   }
   
+  dt_mod <- listDT$dt_mod
+  
   #####################################
   #### Run f.mmm on set_trials
 
-  hyperparameter_fixed <- all(sapply(set_hyperBoundLocal, length)==1)
+  hyperparameter_fixed <- all(sapply(listParam$set_hyperBoundLocal, length)==1)
   hypParamSamName <- f.getHyperNames()
   
   if (fixed.out == T) {
@@ -1374,9 +1468,9 @@ f.robyn <- function(set_hyperBoundLocal
     
     model_output_collect <- list()
     model_output_collect[[1]] <- f.mmm(fixed.hyppar.dt[, hypParamSamName, with = F]
-                                       ,set_iter = set_iter
-                                       ,set_cores = set_cores
-                                       ,optimizer_name = optimizer_name
+                                       #,set_iter = set_iter
+                                       #,set_cores = set_cores
+                                       ,optimizer_name = listParam$set_hyperOptimAlgo
                                        ,fixed.out = T
                                        ,fixed.lambda = unlist(fixed.hyppar.dt$lambda))
     
@@ -1398,10 +1492,10 @@ f.robyn <- function(set_hyperBoundLocal
     
     ## Run f.mmm on set_trials if hyperparameters are all fixed
     model_output_collect <- list()
-    model_output_collect[[1]] <- f.mmm(set_hyperBoundLocal
+    model_output_collect[[1]] <- f.mmm(listParam$set_hyperBoundLocal
                                        ,set_iter = 1
-                                       ,set_cores = 1
-                                       ,optimizer_name = optimizer_name
+                                       #,set_cores = 1
+                                       #,optimizer_name = optimizer_name
     )
     model_output_collect[[1]]$trials <- 1
     
@@ -1414,40 +1508,40 @@ f.robyn <- function(set_hyperBoundLocal
     ## Run f.mmm on set_trials if hyperparameters are not all fixed
     
     ng_out <- list()
-    ng_algos <- optimizer_name # c("DoubleFastGADiscreteOnePlusOne", "DiscreteOnePlusOne", "TwoPointsDE", "DE")
+    ng_algos <- listParam$set_hyperOptimAlgo # c("DoubleFastGADiscreteOnePlusOne", "DiscreteOnePlusOne", "TwoPointsDE", "DE")
     
     t0 <- Sys.time()
     for (optmz in ng_algos) {
       ng_collect <- list()
       model_output_collect <- list()
       
-      for (ngt in 1:set_trial) { 
+      for (ngt in 1:listParam$set_trial) { 
         
-        if (activate_calibration == F) {
-          cat("\nRunning trial nr.", ngt,"out of",set_trial,"...\n")
+        if (is.null(listParam$set_lift)) {
+          cat("\nRunning trial nr.", ngt,"out of",listParam$set_trial,"...\n")
         } else {
-          cat("\nRunning trial nr.", ngt,"out of",set_trial,"with calibration...\n")
+          cat("\nRunning trial nr.", ngt,"out of",listParam$set_trial,"with calibration...\n")
           
         }
         # rm(model_output)
-        model_output <- f.mmm(set_hyperBoundLocal
-                              ,set_iter = set_iter
-                              ,set_cores = set_cores
-                              ,optimizer_name = optmz
+        model_output <- f.mmm(listParam$set_hyperBoundLocal
+                              #,set_iter = set_iter
+                              #,set_cores = set_cores
+                              #,optimizer_name = optmz
         )
         
         check_coef0 <- any(model_output$resultCollect$decompSpendDist$decomp.rssd == Inf)
         if (check_coef0) {
           num_coef0_mod <- model_output$resultCollect$decompSpendDist[decomp.rssd == Inf, uniqueN(paste0(iterNG,"_",iterPar))]
-          num_coef0_mod <- ifelse(num_coef0_mod>set_iter, set_iter, num_coef0_mod)
+          num_coef0_mod <- ifelse(num_coef0_mod>listParam$set_iter, listParam$set_iter, num_coef0_mod)
           message("\nThis trial contains ", num_coef0_mod," iterations with all 0 media coefficient. Please reconsider your media variable choice if the pareto choices are unreasonable.
                   \nRecommendations are: \n1. increase hyperparameter ranges for 0-coef channels on theta (max.reco. c(0, 0.9) ) and gamma (max.reco. c(0.1, 1) ) to give Robyn more freedom\n2. split media into sub-channels, and/or aggregate similar channels, and/or introduce other media\n3. increase trials to get more samples\n")
         }
         
         model_output["trials"] <- ngt
-        ng_collect[[ngt]] <- model_output$resultCollect$paretoFront[, ':='(trials=ngt, iters = set_iter, ng_optmz = optmz)]
+        ng_collect[[ngt]] <- model_output$resultCollect$paretoFront[, ':='(trials=ngt, iters = listParam$set_iter, ng_optmz = optmz)]
         model_output_collect[[ngt]] <- model_output
-        #model_output_pareto <- f.mmm(set_hyperBoundLocal, out = T)
+        #model_output_pareto <- f.mmm(listParam$set_hyperBoundLocal, out = T)
       }
       ng_collect <- rbindlist(ng_collect)
       px <- low(ng_collect$nrmse) * low(ng_collect$decomp.rssd)
@@ -1471,7 +1565,7 @@ f.robyn <- function(set_hyperBoundLocal
     resultHypParam[, solID:= (paste(trials,iterNG, iterPar, sep = "_"))]
     xDecompAgg[, solID:= (paste(trials,iterNG, iterPar, sep = "_"))]
   }
-  xDecompAggCoef0 <- xDecompAgg[rn %in% set_mediaVarName, .(coef0=min(coef)==0), by = "solID"]
+  xDecompAggCoef0 <- xDecompAgg[rn %in% listParam$set_mediaVarName, .(coef0=min(coef)==0), by = "solID"]
   
   if (!hyperparameter_fixed) {
     mape_lift_quantile10 <- quantile(resultHypParam$mape, probs = 0.10)
@@ -1499,7 +1593,7 @@ f.robyn <- function(set_hyperBoundLocal
   decompSpendDist <- rbindlist(lapply(model_output_collect, function (x) x$resultCollect$decompSpendDist[, trials:= x$trials]))
   decompSpendDist <- decompSpendDist[resultHypParam, robynPareto := i.robynPareto, on = c("iterNG", "iterPar", "trials")]
   if (fixed.out != T) {decompSpendDist[, solID:= (paste(trials,iterNG, iterPar, sep = "_"))]}
-  decompSpendDist <- decompSpendDist[xDecompAgg[rn %in% set_mediaVarName, .(rn, xDecompAgg, solID)], on = c("rn", "solID")]
+  decompSpendDist <- decompSpendDist[xDecompAgg[rn %in% listParam$set_mediaVarName, .(rn, xDecompAgg, solID)], on = c("rn", "solID")]
   decompSpendDist[, roi := xDecompMeanNon0/mean_spend]
 
   setkey(xDecompAgg,solID, rn)
@@ -1518,7 +1612,7 @@ f.robyn <- function(set_hyperBoundLocal
   
   #paretoFronts <- ifelse(!hyperparameter_fixed, c(1,2,3), 1)
   if (!hyperparameter_fixed & fixed.out ==F) {
-    paretoFronts <- pareto_fronts
+    paretoFronts <- 1:pareto_fronts
     num_pareto123 <- resultHypParam[robynPareto %in% paretoFronts, .N]
   } else {
     paretoFronts <- 1
@@ -1534,8 +1628,8 @@ f.robyn <- function(set_hyperBoundLocal
     
     ## plot prophet
     
-    if (activate_prophet) {
-      pProphet <- prophet_plot_components(modelRecurrance, forecastRecurrance, render_plot = T)
+    if (!is.null(listParam$set_prophet)) {
+      pProphet <- prophet_plot_components(listDT$modelRecurrance, listDT$forecastRecurrance, render_plot = T)
       # ggsave(paste0(plot_folder, "/", plot_folder_sub,"/", "prophet.png")
       #        , dpi = 600, width = 12, height = 7)
     }
@@ -1543,14 +1637,14 @@ f.robyn <- function(set_hyperBoundLocal
     
     ## plot spend exposure model
     
-    if(any(costSelector)) {
-      pSpendExposure <- arrangeGrob(grobs = plotNLSCollect
-                                 ,ncol= ifelse(length(plotNLSCollect)<=3, length(plotNLSCollect), 3)
+    if(any(listParam$costSelector)) {
+      pSpendExposure <- arrangeGrob(grobs = listParam$plotNLSCollect
+                                 ,ncol= ifelse(length(listParam$plotNLSCollect)<=3, length(listParam$plotNLSCollect), 3)
                                  ,top = "Spend-exposure fitting with Michaelis-Menten model")
       #grid.draw(pSpendExposure)
       ggsave(paste0(plot_folder, "/", plot_folder_sub,"/", "spend_exposure_fitting.png")
              , plot = pSpendExposure
-             , dpi = 600, width = 12, height = ceiling(length(plotNLSCollect)/3)*7)
+             , dpi = 600, width = 12, height = ceiling(length(listParam$plotNLSCollect)/3)*7)
       
     } else {
       message("\nno spend-exposure modelling needed. all media variables used for mmm are spend variables ")
@@ -1559,14 +1653,14 @@ f.robyn <- function(set_hyperBoundLocal
     
     ## plot hyperparameter sampling distribution
     
-    resultHypParam.melted <- melt.data.table(resultHypParam[, c(local_name,"robynPareto"), with = F], id.vars = c("robynPareto"))
+    resultHypParam.melted <- melt.data.table(resultHypParam[, c(listParam$local_name,"robynPareto"), with = F], id.vars = c("robynPareto"))
     
     pSamp <- ggplot(data = resultHypParam.melted,  aes( x = value, y=variable, color = variable, fill = variable) ) +
       geom_violin(alpha = .5, size = 0) +
       geom_point(size = 0.2) +
       theme(legend.position = "none") +
       labs(title="Model selection", 
-           subtitle=paste0("Hyperparameter pareto sample distribution", ", iterations = ", set_iter, " * ", set_trial, " trials"),
+           subtitle=paste0("Hyperparameter pareto sample distribution", ", iterations = ", listParam$set_iter, " * ", listParam$set_trial, " trials"),
            x="Hyperparameter space",
            y="")
     print(pSamp)
@@ -1581,13 +1675,20 @@ f.robyn <- function(set_hyperBoundLocal
       geom_point(size = 0.5) +
       #stat_smooth(data = resultHypParam, method = 'gam', formula = y ~ s(x, bs = "cs"), size = 0.2, fill = "grey100", linetype="dashed")+
       geom_line(data = resultHypParam[robynPareto ==1], aes(x=nrmse, y=decomp.rssd), colour = "coral4")+
-      geom_line(data = resultHypParam[robynPareto ==2], aes(x=nrmse, y=decomp.rssd), colour = "coral3")+
-      geom_line(data = resultHypParam[robynPareto ==3], aes(x=nrmse, y=decomp.rssd), colour = "coral")+
+      #geom_line(data = resultHypParam[robynPareto ==2], aes(x=nrmse, y=decomp.rssd), colour = "coral3")+
+      #geom_line(data = resultHypParam[robynPareto ==3], aes(x=nrmse, y=decomp.rssd), colour = "coral")+
       scale_colour_gradient(low = "navyblue", high = "skyblue") +
       labs(title="Model selection",
-           subtitle=paste0("2D Pareto front 1-3 with ",optimizer_name,", iterations = ", set_iter , " * ", set_trial, " trials"),
+           subtitle=paste0("2D Pareto front 1-3 with ",listParam$set_hyperOptimAlgo,", iterations = ", listParam$set_iter , " * ", listParam$set_trial, " trials"),
            x="NRMSE",
            y="DECOMP.RSSD")
+    
+    if (length(paretoFronts)>1) {
+      for (pfs in 2:max(paretoFronts)) {
+        if (pfs ==2) {pf_color <- "coral3"} else {pf_color <- "coral"}
+        pParFront <- pParFront + geom_line(data = resultHypParam[robynPareto ==2], aes(x=nrmse, y=decomp.rssd), colour = pf_color)
+      }
+    }
     
     print(pParFront)
     ggsave(paste0(plot_folder, "/", plot_folder_sub,"/", "pareto_front.png")
@@ -1605,11 +1706,11 @@ f.robyn <- function(set_hyperBoundLocal
     for (pf in paretoFronts) {
       
       if (!hyperparameter_fixed & fixed.out ==F) {
-        plotMediaShare <- xDecompAgg[robynPareto == pf & rn %in% set_mediaVarName]
+        plotMediaShare <- xDecompAgg[robynPareto == pf & rn %in% listParam$set_mediaVarName]
         plotWaterfall <- xDecompAgg[robynPareto == pf]
         uniqueSol <- plotMediaShare[, unique(solID)]
       } else {
-        plotMediaShare <- xDecompAgg[rn %in% set_mediaVarName]
+        plotMediaShare <- xDecompAgg[rn %in% listParam$set_mediaVarName]
         plotWaterfall <- copy(xDecompAgg)
         uniqueSol <- plotMediaShare[, unique(solID)]
       }
@@ -1622,10 +1723,10 @@ f.robyn <- function(set_hyperBoundLocal
         rsq_train_plot <- plotMediaShareLoop[, round(unique(rsq_train),4)]
         nrmse_plot <- plotMediaShareLoop[, round(unique(nrmse),4)]
         decomp_rssd_plot <- plotMediaShareLoop[, round(unique(decomp.rssd),4)]
-        mape_lift_plot <- ifelse(activate_calibration, plotMediaShareLoop[, round(unique(mape),4)], NA)
+        mape_lift_plot <- ifelse(!is.null(listParam$set_lift), plotMediaShareLoop[, round(unique(mape),4)], NA)
         
         plotMediaShareLoop <- melt.data.table(plotMediaShareLoop, id.vars = c("rn", "nrmse", "decomp.rssd", "rsq_train" ), measure.vars = c("spend_share", "effect_share", "roi"))
-        plotMediaShareLoop[, rn:= factor(rn, levels = sort(set_mediaVarName))]
+        plotMediaShareLoop[, rn:= factor(rn, levels = sort(listParam$set_mediaVarName))]
         plotMediaShareLoopBar <- plotMediaShareLoop[variable %in% c("spend_share", "effect_share")]
         plotMediaShareLoopBar[, variable:= ifelse(variable=="spend_share", "avg.spend share", "avg.effect share")]
         plotMediaShareLoopLine <- plotMediaShareLoop[variable =="roi"]
@@ -1679,69 +1780,69 @@ f.robyn <- function(set_hyperBoundLocal
         
         resultHypParamLoop <- resultHypParam[solID == uniqueSol[j]]
         
-        hypParam <- unlist(resultHypParamLoop[, local_name, with =F])
-        dt_transformPlot <- dt_mod[, c("ds", set_mediaVarName), with =F] # independent variables
-        dt_transformSpend <- cbind(dt_transformPlot[,.(ds)], dt_input[, c(set_mediaSpendName), with =F]) # spends of indep vars
-        setnames(dt_transformSpend, names(dt_transformSpend), c("ds", set_mediaVarName))
+        hypParam <- unlist(resultHypParamLoop[, listParam$local_name, with =F])
+        dt_transformPlot <- dt_mod[, c("ds", listParam$set_mediaVarName), with =F] # independent variables
+        dt_transformSpend <- cbind(dt_transformPlot[,.(ds)], listDT$dt_input[, c(listParam$set_mediaSpendName), with =F]) # spends of indep vars
+        setnames(dt_transformSpend, names(dt_transformSpend), c("ds", listParam$set_mediaVarName))
         dt_transformSpendMod <- copy(dt_transformPlot) 
         dt_transformAdstock <- copy(dt_transformPlot)
         dt_transformSaturation <- copy(dt_transformPlot)
-        chnl_non_spend <- set_mediaVarName[!(set_mediaVarName==set_mediaSpendName)]
+        chnl_non_spend <- listParam$set_mediaVarName[!(listParam$set_mediaVarName==listParam$set_mediaSpendName)]
         
         m_decayRate <- list()
-        if (adstock == "geometric") {
-          for (med in 1:length(set_mediaVarName)) {
+        if (listParam$adstock == "geometric") {
+          for (med in 1:length(listParam$set_mediaVarName)) {
             
-            med_select <- set_mediaVarName[med]
+            med_select <- listParam$set_mediaVarName[med]
             # update non-spend variables
             if (med_select %in% chnl_non_spend) {
-              sel_nls <- ifelse(modNLSCollect[channel == med_select, rsq_nls>rsq_lm],"nls","lm")
-              dt_transformSpendMod[, (med_select):= yhatNLSCollect[channel==med_select & models == sel_nls, yhat]]
+              sel_nls <- ifelse(listParam$modNLSCollect[channel == med_select, rsq_nls>rsq_lm],"nls","lm")
+              dt_transformSpendMod[, (med_select):= listParam$yhatNLSCollect[channel==med_select & models == sel_nls, yhat]]
             }
             m <- dt_transformPlot[, get(med_select)]
-            theta <- hypParam[paste0(set_mediaVarName[med], "_thetas")]
-            alpha <- hypParam[paste0(set_mediaVarName[med], "_alphas")]
-            gamma <- hypParam[paste0(set_mediaVarName[med], "_gammas")]
-            dt_transformAdstock[, (med_select):= f.transformation(x=m, theta=theta, alpha=alpha, gamma=gamma, alternative = adstock, stage=1)] 
-            dt_transformSaturation[, (med_select):= f.transformation(x=m, theta=theta, alpha=alpha, gamma=gamma, alternative = adstock, stage=3)] 
+            theta <- hypParam[paste0(listParam$set_mediaVarName[med], "_thetas")]
+            alpha <- hypParam[paste0(listParam$set_mediaVarName[med], "_alphas")]
+            gamma <- hypParam[paste0(listParam$set_mediaVarName[med], "_gammas")]
+            dt_transformAdstock[, (med_select):= f.transformation(x=m, theta=theta, alpha=alpha, gamma=gamma, alternative = listParam$adstock, stage=1)] 
+            dt_transformSaturation[, (med_select):= f.transformation(x=m, theta=theta, alpha=alpha, gamma=gamma, alternative = listParam$adstock, stage=3)] 
 
-            m <- dt_transformPlot[, get(set_mediaVarName[med])]
-            m_decayRate[[med]] <- data.table((f.transformation(x=m, theta=theta, alpha=alpha, gamma=gamma, alternative = adstock, stage="thetaVecCum")))
+            m <- dt_transformPlot[, get(listParam$set_mediaVarName[med])]
+            m_decayRate[[med]] <- data.table((f.transformation(x=m, theta=theta, alpha=alpha, gamma=gamma, alternative = listParam$adstock, stage="thetaVecCum")))
             
-            setnames(m_decayRate[[med]], "V1", paste0(set_mediaVarName[med], "_decayRate"))
+            setnames(m_decayRate[[med]], "V1", paste0(listParam$set_mediaVarName[med], "_decayRate"))
           }
 
-        } else if (adstock == "weibull") {
-          for (med in 1:length(set_mediaVarName)) {
+        } else if (listParam$adstock == "weibull") {
+          for (med in 1:length(listParam$set_mediaVarName)) {
             
-            med_select <- set_mediaVarName[med]
+            med_select <- listParam$set_mediaVarName[med]
             # update non-spend variables
             if (med_select %in% chnl_non_spend) {
-              sel_nls <- ifelse(modNLSCollect[channel == med_select, rsq_nls>rsq_lm],"nls","lm")
-              dt_transformSpendMod[, (med_select):= yhatNLSCollect[channel==med_select & models == sel_nls, yhat]]
+              sel_nls <- ifelse(listParam$modNLSCollect[channel == med_select, rsq_nls>rsq_lm],"nls","lm")
+              dt_transformSpendMod[, (med_select):= listParam$yhatNLSCollect[channel==med_select & models == sel_nls, yhat]]
             }
             m <- dt_transformPlot[, get(med_select)]
-            shape <- hypParam[paste0(set_mediaVarName[med], "_shapes")]
-            scale <- hypParam[paste0(set_mediaVarName[med], "_scales")]
-            alpha <- hypParam[paste0(set_mediaVarName[med], "_alphas")]
-            gamma <- hypParam[paste0(set_mediaVarName[med], "_gammas")]
-            dt_transformAdstock[, (med_select):= f.transformation(x=m, shape=shape, scale=scale, alpha=alpha, gamma=gamma, alternative = adstock, stage=1)] 
-            dt_transformSaturation[, (med_select):= f.transformation(x=m, shape=shape, scale=scale, alpha=alpha, gamma=gamma, alternative = adstock, stage=3)] 
+            shape <- hypParam[paste0(listParam$set_mediaVarName[med], "_shapes")]
+            scale <- hypParam[paste0(listParam$set_mediaVarName[med], "_scales")]
+            alpha <- hypParam[paste0(listParam$set_mediaVarName[med], "_alphas")]
+            gamma <- hypParam[paste0(listParam$set_mediaVarName[med], "_gammas")]
+            dt_transformAdstock[, (med_select):= f.transformation(x=m, shape=shape, scale=scale, alpha=alpha, gamma=gamma, alternative = listParam$adstock, stage=1)] 
+            dt_transformSaturation[, (med_select):= f.transformation(x=m, shape=shape, scale=scale, alpha=alpha, gamma=gamma, alternative = listParam$adstock, stage=3)] 
             
-            m <- dt_transformPlot[, get(set_mediaVarName[med])]
-            m_decayRate[[med]] <- data.table((f.transformation(x=m, shape= shape, scale=scale, alpha=alpha, gamma=gamma, alternative = adstock, stage="thetaVecCum")))
-            setnames(m_decayRate[[med]], "V1", paste0(set_mediaVarName[med], "_decayRate"))
+            m <- dt_transformPlot[, get(listParam$set_mediaVarName[med])]
+            m_decayRate[[med]] <- data.table((f.transformation(x=m, shape= shape, scale=scale, alpha=alpha, gamma=gamma, alternative = listParam$adstock, stage="thetaVecCum")))
+            setnames(m_decayRate[[med]], "V1", paste0(listParam$set_mediaVarName[med], "_decayRate"))
           }
         }
         
         m_decayRate <- data.table(cbind(sapply(m_decayRate, function(x) sapply(x, function(y)y))))
-        setnames(m_decayRate, names(m_decayRate), set_mediaVarName)
-        m_decayRateSum <- m_decayRate[, lapply(.SD, sum), .SDcols = set_mediaVarName]
+        setnames(m_decayRate, names(m_decayRate), listParam$set_mediaVarName)
+        m_decayRateSum <- m_decayRate[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName]
         
         decayRate.melt <- suppressWarnings(melt.data.table(m_decayRateSum))
         
-        #decayRate.melt[, channel:=str_extract(decayRate.melt$variable, paste0(set_mediaVarName, collapse = "|"))]
-        #decayRate.melt[, variable:=str_replace(decayRate.melt$variable, paste0(paste0(set_mediaVarName,"_"), collapse = "|"), "")]
+        #decayRate.melt[, channel:=str_extract(decayRate.melt$variable, paste0(listParam$set_mediaVarName, collapse = "|"))]
+        #decayRate.melt[, variable:=str_replace(decayRate.melt$variable, paste0(paste0(listParam$set_mediaVarName,"_"), collapse = "|"), "")]
         
         ## get geometric reference
         decayVec <- seq(0, 0.9, by = 0.001)
@@ -1755,7 +1856,7 @@ f.robyn <- function(set_hyperBoundLocal
           decayOut[i] <- decayVec[which.min(abs(decayRate.melt$value[i] - decayInfSum))]
         }
         decayRate.melt[, avg_decay_rate:= decayOut]
-        decayRate.melt[, variable:= factor(variable, levels = sort(set_mediaVarName))]
+        decayRate.melt[, variable:= factor(variable, levels = sort(listParam$set_mediaVarName))]
         
         p3 <- ggplot(decayRate.melt, aes(x=variable, y=avg_decay_rate, fill = "coral")) +
           geom_bar(stat = "identity", width = 0.5) +
@@ -1773,29 +1874,29 @@ f.robyn <- function(set_hyperBoundLocal
         ## plot response curve
         
         dt_transformSaturationDecomp <- copy(dt_transformSaturation)
-        for (i in 1:length(set_mediaVarName)) {
-          coef <- plotWaterfallLoop[rn == set_mediaVarName[i], coef]
-          dt_transformSaturationDecomp[, (set_mediaVarName[i]):= .SD * coef, .SDcols = set_mediaVarName[i]]
+        for (i in 1:length(listParam$set_mediaVarName)) {
+          coef <- plotWaterfallLoop[rn == listParam$set_mediaVarName[i], coef]
+          dt_transformSaturationDecomp[, (listParam$set_mediaVarName[i]):= .SD * coef, .SDcols = listParam$set_mediaVarName[i]]
         }
         
-        #mediaAdstockFactorPlot <- dt_transformPlot[, lapply(.SD, sum), .SDcols = set_mediaVarName]  / dt_transformAdstock[, lapply(.SD, sum), .SDcols = set_mediaVarName]
-        #dt_transformSaturationAdstockReverse <- data.table(mapply(function(x, y) {x*y},x= dt_transformAdstock[, set_mediaVarName, with=F], y= mediaAdstockFactorPlot))
+        #mediaAdstockFactorPlot <- dt_transformPlot[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName]  / dt_transformAdstock[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName]
+        #dt_transformSaturationAdstockReverse <- data.table(mapply(function(x, y) {x*y},x= dt_transformAdstock[, listParam$set_mediaVarName, with=F], y= mediaAdstockFactorPlot))
         dt_transformSaturationSpendReverse <- copy(dt_transformAdstock)
         
-        for (i in 1:length(set_mediaVarName)) {
-          chn <- set_mediaVarName[i]
-          if (chn %in% set_mediaVarName[costSelector]) {
+        for (i in 1:length(listParam$set_mediaVarName)) {
+          chn <- listParam$set_mediaVarName[i]
+          if (chn %in% listParam$set_mediaVarName[listParam$costSelector]) {
             
             # get Michaelis Menten nls fitting param
             get_chn <- dt_transformSaturationSpendReverse[, chn, with =F]
-            Vmax <- modNLSCollect[channel == chn, Vmax]
-            Km <- modNLSCollect[channel == chn, Km]
+            Vmax <- listParam$modNLSCollect[channel == chn, Vmax]
+            Km <- listParam$modNLSCollect[channel == chn, Km]
             
             # reverse exposure to spend
             dt_transformSaturationSpendReverse[, (chn):=.SD * Km / (Vmax - .SD), .SDcols = chn] # exposure to spend, reverse Michaelis Menthen: x = y*Km/(Vmax-y)
             
           } else if (chn %in% chnl_non_spend) {
-            coef_lm <- modNLSCollect[channel == chn, coef_lm]
+            coef_lm <- listParam$modNLSCollect[channel == chn, coef_lm]
             dt_transformSaturationSpendReverse[, (chn):= .SD/coef_lm, .SDcols = chn] 
           } 
           # spendRatioFitted <- xDecompAgg[rn == chn, mean(total_spend)] / dt_transformSaturationSpendReverse[, sum(.SD), .SDcols = chn]
@@ -1807,24 +1908,24 @@ f.robyn <- function(set_hyperBoundLocal
         dt_scurvePlot <- dt_scurvePlot[spend>=0] # remove outlier introduced by MM nls fitting
         
         
-        dt_scurvePlotMean <- dt_transformSpend[, !"ds"][, lapply(.SD, function(x) mean(x[x>0])), .SDcols = set_mediaVarName]
-        dt_scurvePlotMean <- melt.data.table(dt_scurvePlotMean, measure.vars = set_mediaVarName, value.name = "mean_spend", variable.name = "channel")
+        dt_scurvePlotMean <- dt_transformSpend[, !"ds"][, lapply(.SD, function(x) mean(x[x>0])), .SDcols = listParam$set_mediaVarName]
+        dt_scurvePlotMean <- melt.data.table(dt_scurvePlotMean, measure.vars = listParam$set_mediaVarName, value.name = "mean_spend", variable.name = "channel")
         dt_scurvePlotMean[, ':='(mean_spend_scaled=0, mean_response=0, next_unit_response=0)]
         
-        for (med in 1:length(set_mediaVarName)) {
-          m <- dt_transformAdstock[, get(set_mediaVarName[med])]
+        for (med in 1:length(listParam$set_mediaVarName)) {
+          m <- dt_transformAdstock[, get(listParam$set_mediaVarName[med])]
           # m <- m[m>0] # remove outlier introduced by MM nls fitting
-          alpha <- hypParam[which(paste0(set_mediaVarName[med], "_alphas")==names(hypParam))]
-          gamma <- hypParam[which(paste0(set_mediaVarName[med], "_gammas")==names(hypParam))]
+          alpha <- hypParam[which(paste0(listParam$set_mediaVarName[med], "_alphas")==names(hypParam))]
+          gamma <- hypParam[which(paste0(listParam$set_mediaVarName[med], "_gammas")==names(hypParam))]
           gammaTrans <- round(quantile(seq(range(m)[1], range(m)[2], length.out = 100), gamma),4)
-          get_spend <- dt_scurvePlotMean[channel == set_mediaVarName[med], mean_spend]
+          get_spend <- dt_scurvePlotMean[channel == listParam$set_mediaVarName[med], mean_spend]
           
-          if (set_mediaVarName[med] %in% set_mediaVarName[costSelector]) {
-            Vmax <- modNLSCollect[channel == set_mediaVarName[med], Vmax]
-            Km <- modNLSCollect[channel == set_mediaVarName[med], Km]
+          if (listParam$set_mediaVarName[med] %in% listParam$set_mediaVarName[listParam$costSelector]) {
+            Vmax <- listParam$modNLSCollect[channel == listParam$set_mediaVarName[med], Vmax]
+            Km <- listParam$modNLSCollect[channel == listParam$set_mediaVarName[med], Km]
             get_spend_mm <- Vmax * get_spend/(Km + get_spend)
-          } else if (set_mediaVarName[med] %in% chnl_non_spend) {
-            coef_lm <- modNLSCollect[channel == set_mediaVarName[med], coef_lm]
+          } else if (listParam$set_mediaVarName[med] %in% chnl_non_spend) {
+            coef_lm <- listParam$modNLSCollect[channel == listParam$set_mediaVarName[med], coef_lm]
             get_spend_mm <- get_spend*coef_lm
           } else {
             get_spend_mm <- get_spend
@@ -1832,10 +1933,10 @@ f.robyn <- function(set_hyperBoundLocal
           
           get_response <-  get_spend_mm**alpha / (get_spend_mm**alpha + gammaTrans**alpha)
           get_response_marginal <- (get_spend_mm+1)**alpha / ((get_spend_mm+1)**alpha + gammaTrans**alpha)
-          coef <- plotWaterfallLoop[rn == set_mediaVarName[med], coef]
-          dt_scurvePlotMean[channel == set_mediaVarName[med], mean_spend_scaled := get_spend_mm]
-          dt_scurvePlotMean[channel == set_mediaVarName[med], mean_response := get_response * coef]
-          dt_scurvePlotMean[channel == set_mediaVarName[med], next_unit_response := get_response_marginal * coef - mean_response]
+          coef <- plotWaterfallLoop[rn == listParam$set_mediaVarName[med], coef]
+          dt_scurvePlotMean[channel == listParam$set_mediaVarName[med], mean_spend_scaled := get_spend_mm]
+          dt_scurvePlotMean[channel == listParam$set_mediaVarName[med], mean_response := get_response * coef]
+          dt_scurvePlotMean[channel == listParam$set_mediaVarName[med], next_unit_response := get_response_marginal * coef - mean_response]
           
         }
         dt_scurvePlotMean[, solID:= uniqueSol[j]]
@@ -1854,12 +1955,12 @@ f.robyn <- function(set_hyperBoundLocal
         
         ## plot fitted vs actual
         
-        if(activate_prophet) {
-          dt_transformDecomp <- cbind(dt_mod[, c("ds", "depVar", set_prophet, set_baseVarName), with=F], dt_transformSaturation[, set_mediaVarName, with=F])
-          col_order <- c("ds", "depVar", set_prophet, set_baseVarName, set_mediaVarName)
+        if(!is.null(listParam$set_prophet)) {
+          dt_transformDecomp <- cbind(dt_mod[, c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName), with=F], dt_transformSaturation[, listParam$set_mediaVarName, with=F])
+          col_order <- c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName)
         } else {
-          dt_transformDecomp <- cbind(dt_mod[, c("ds", "depVar", set_baseVarName), with=F], dt_transformSaturation[, set_mediaVarName, with=F])
-          col_order <- c("ds", "depVar", set_baseVarName, set_mediaVarName)
+          dt_transformDecomp <- cbind(dt_mod[, c("ds", "depVar", listParam$set_baseVarName), with=F], dt_transformSaturation[, listParam$set_mediaVarName, with=F])
+          col_order <- c("ds", "depVar", listParam$set_baseVarName, listParam$set_mediaVarName)
         }
         setcolorder(dt_transformDecomp, neworder = col_order)
         
@@ -1886,7 +1987,7 @@ f.robyn <- function(set_hyperBoundLocal
                                   ", nrmse = ", nrmse_plot, 
                                   ", decomp.rssd = ", decomp_rssd_plot,
                                   ", mape.lift = ", mape_lift_plot)
-               ,x="Spend" ,y="response")
+               ,x="date" ,y="response")
         
         ## plot diagnostic: fitted vs residual
         
@@ -1971,10 +2072,11 @@ f.robyn.fixed <- function(plot_folder = getwd()
   if (nrow(dt_hyppar_fixed)==0) {stop("solID not included in fixed_hyppar_dt")}
   
   ## run f.robyn
-  model_output_collect <- f.robyn(set_hyperBoundLocal
-                                  ,optimizer_name = set_hyperOptimAlgo
-                                  ,set_trial = set_trial
-                                  ,set_cores = set_cores
+  model_output_collect <- f.robyn(listParam = parent.frame()$listParam
+                                  #,set_hyperBoundLocal = set_hyperBoundLocal
+                                  #,optimizer_name = set_hyperOptimAlgo
+                                  #,set_trial = set_trial
+                                  #,set_cores = set_cores
                                   ,plot_folder = plot_folder
                                   ,fixed.out = T
                                   ,fixed.hyppar.dt = dt_hyppar_fixed)
