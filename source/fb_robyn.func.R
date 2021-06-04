@@ -52,7 +52,8 @@ f.inputParam <- function(listDT = parent.frame()$listDT
                          ,set_cores = 1 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
                          
                          ## set rolling window start (only works for whole dataset for now)
-                         ,set_trainStartDate = "2015-11-23" 
+                         ,set_rollingWindowStartDate = NULL 
+                         ,set_rollingWindowEndDate = NULL
                          
                          ## set model core features
                          ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
@@ -63,11 +64,134 @@ f.inputParam <- function(listDT = parent.frame()$listDT
                          ## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
                          
                          ,set_hyperBoundLocal = NULL
-                         ,set_lift = NULL
+                         ,set_lift = data.table(channel = character(), # channel names, allow multiple studies for one channel
+                                                liftStartDate = Date(), # must be date format '2020-12-31'
+                                                liftEndDate = Date(), # must be date format '2020-12-31'
+                                                liftAbs = numeric()) # causal result
                          
 ) {
+  
+  ## check listDT existence
   if (is.null(listDT)) {stop("Object listDT is missing. Must run f.inputDT first")}
   
+  ## check date input
+  inputLen <- length(listDT$dt_input[, get(set_dateVarName)])
+  inputLenUnique <- length(unique(listDT$dt_input[, get(set_dateVarName)]))
+  
+  if (is.null(set_dateVarName) | !(set_dateVarName %in% names(listDT$dt_input)) | length(set_dateVarName)>1) {
+    stop("Must provide correct only 1 date variable name for set_dateVarName")
+  } else if (any(is.na(as.Date(as.character(listDT$dt_input[, get(set_dateVarName)]), "%Y-%m-%d")))) {
+    stop("Date variable in set_dateVarName must have format '2020-12-31'")
+  } else if (inputLen != inputLenUnique) {
+    stop("Date variable has duplicated dates. Please clean data first")
+  } else if (any(apply(listDT$dt_input, 2, function(x) any(is.na(x) | is.infinite(x))))) {
+    stop("listDT$dt_input has NA or Inf. Please clean data first")
+  }
+
+  listDT$dt_input <- listDT$dt_input[order(as.Date(listDT$dt_input[, get(set_dateVarName)]))]
+  dayInterval <- as.integer(difftime(as.Date(listDT$dt_input[, get(set_dateVarName)])[2], as.Date(listDT$dt_input[, get(set_dateVarName)])[1], units = "days"))
+  intervalType <- if(dayInterval==1) {"day"} else if (dayInterval==7) {"week"} else if (dayInterval %in% 28:31) {"month"} else {stop("input data has to be daily, weekly or monthly")}
+  
+  ## check dependent var
+  if (is.null(set_depVarName) | !(set_depVarName %in% names(listDT$dt_input)) | length(set_depVarName)>1) {
+    stop("Must provide only 1 correct dependent variable name for set_depVarName")
+  } else if ( !(is.numeric(listDT$dt_input[, get(set_depVarName)]) | is.integer(listDT$dt_input[, get(set_depVarName)]))) {
+    stop("set_depVarName must be numeric or integer")
+  }
+  
+  ## check prophet
+  if (is.null(set_prophet)) {
+    set_prophetVarSign <- NULL; set_prophetCountry <- NULL
+  } else if (!all(set_prophet %in% c("trend","season", "weekday", "holiday"))) {
+    stop("allowed values for set_prophet are 'trend', 'season', 'weekday' and 'holiday'")
+  } else if (is.null(set_prophetCountry) | length(set_prophetCountry) >1) {
+    stop("1 country code must be provided in set_prophetCountry. ",listDT$dt_holidays[, uniqueN(country)], " countries are included: ", paste(listDT$dt_holidays[, unique(country)], collapse = ", "), ". If your country is not available, please add it to the holidays.csv first")
+  } else if (is.null(set_prophetVarSign)) {
+    set_prophetVarSign <- rep("default", length(set_prophet))
+    message("set_prophetVarSign is not provided. 'default' is used")
+  } else if (length(set_prophetVarSign) != length(set_prophet) | !all(set_prophetVarSign %in% c("positive", "negative", "default"))) {
+    stop("set_prophetVarSign must have same length as set_prophet. allowed values are 'positive', 'negative', 'default'")
+  }
+  
+  ## check baseline variables
+  if (is.null(set_baseVarName)) {
+    set_baseVarSign <- NULL
+  } else if ( !all(set_baseVarName %in% names(listDT$dt_input)) ) {
+    stop("Provided set_baseVarName is not included in input data")
+  } else if (is.null(set_baseVarSign)) {
+    set_baseVarSign <- rep("default", length(set_baseVarName))
+    message("set_baseVarSign is not provided. 'default' is used")
+  } else if (length(set_baseVarSign) != length(set_baseVarName) | !all(set_baseVarSign %in% c("positive", "negative", "default"))) {
+    stop("set_baseVarSign must have same length as set_baseVarName. allowed values are 'positive', 'negative', 'default'")
+  }
+  
+  ## check media variables
+  mediaVarCount <- length(set_mediaVarName)
+  spendVarCount <- length(set_mediaSpendName)
+  if (is.null(set_mediaVarName) | is.null(set_mediaSpendName)) {
+    stop("Must provide set_mediaVarName and set_mediaSpendName")
+  } else if ( !all(set_mediaVarName %in% names(listDT$dt_input)) ) {
+    stop("Provided set_mediaVarName is not included in input data")
+  } else if (is.null(set_mediaVarSign)) {
+    set_mediaVarSign <- rep("positive", mediaVarCount)
+    message("set_mediaVarSign is not provided. 'positive' is used")
+  } else if (length(set_mediaVarSign) != mediaVarCount | !all(set_mediaVarSign %in% c("positive", "negative", "default"))) {
+    stop("set_mediaVarSign must have same length as set_mediaVarName. allowed values are 'positive', 'negative', 'default'")
+  } else if (!all(set_mediaSpendName %in% names(listDT$dt_input))) {
+    stop("Provided set_mediaSpendName is not included in input data")
+  } else if (spendVarCount != mediaVarCount) {
+    stop("set_mediaSpendName must have same length as set_mediaVarName.")
+  } 
+  
+  ## check set_rollingWindowStartDate & set_rollingWindowEndDate
+  if (is.null(set_rollingWindowStartDate)) {
+    set_rollingWindowStartDate <- min(as.character(listDT$dt_input[, get(set_dateVarName)]))
+  } else if (is.na(as.Date(set_rollingWindowStartDate, "%Y-%m-%d"))) {
+    stop("set_rollingWindowStartDate must have format '2020-12-31'")
+  } else if (set_rollingWindowStartDate < min(as.character(listDT$dt_input[, get(set_dateVarName)]))) {
+    set_rollingWindowStartDate <- min(as.character(listDT$dt_input[, get(set_dateVarName)]))
+    message("set_rollingWindowStartDate is smaller than the earliest date in input data. It's set to the earliest date")
+  } else if (set_rollingWindowStartDate > max(as.character(listDT$dt_input[, get(set_dateVarName)]))) {
+    stop("set_rollingWindowStartDate can't be larger than the the latest date in input data")
+  }  
+  
+  initRollWindStartWhich <- which.min(abs(difftime(as.Date(listDT$dt_input[, get(set_dateVarName)]), as.Date(set_rollingWindowStartDate), units = "days")))
+  if (!(as.Date(set_rollingWindowStartDate) %in% listDT$dt_input[, get(set_dateVarName)])) {
+    set_rollingWindowStartDate <- listDT$dt_input[initRollWindStartWhich, get(set_dateVarName)]
+    message("set_rollingWindowStartDate is adapted to the closest date contained in input data: ", set_rollingWindowStartDate)
+  }
+  
+  if (is.null(set_rollingWindowEndDate)) {
+    set_rollingWindowEndDate <- max(as.character(listDT$dt_input[, get(set_dateVarName)]))
+  } else if (is.na(as.Date(set_rollingWindowEndDate, "%Y-%m-%d"))) {
+    stop("set_rollingWindowEndDate must have format '2020-12-31'")
+  } else if (set_rollingWindowEndDate > max(as.character(listDT$dt_input[, get(set_dateVarName)]))) {
+    set_rollingWindowEndDate <- max(as.character(listDT$dt_input[, get(set_dateVarName)]))
+    message("set_rollingWindowEndDate is larger than the latest date in input data. It's set to the latest date")
+  } else if (set_rollingWindowEndDate < set_rollingWindowStartDate) {
+    set_rollingWindowEndDate <- max(as.character(listDT$dt_input[, get(set_dateVarName)]))
+    message("set_rollingWindowEndDate must be >= set_rollingWindowStartDate. It's set to latest date in input data")
+  }
+  
+  initRollWindEndWhich <- which.min(abs(difftime(as.Date(listDT$dt_input[, get(set_dateVarName)]), as.Date(set_rollingWindowEndDate), units = "days")))
+  if (!(as.Date(set_rollingWindowEndDate) %in% listDT$dt_input[, get(set_dateVarName)])) {
+    set_rollingWindowEndDate <- listDT$dt_input[initRollWindEndWhich, get(set_dateVarName)]
+    message("set_rollingWindowEndDate is adapted to the closest date contained in input data: ", set_rollingWindowEndDate)
+  }
+  
+  initRollWindLength <- initRollWindEndWhich - initRollWindStartWhich +1
+  dt_init <- listDT$dt_input[initRollWindStartWhich:initRollWindEndWhich, set_mediaVarName, with =F]
+  init_all0 <- colSums(dt_init)==0
+  if(any(init_all0)) {
+    stop("These media channels contains only 0 within training period ",listDT$dt_input[initRollWindStartWhich, get(set_dateVarName)], " to ", listDT$dt_input[initRollWindEndWhich, get(set_dateVarName)], ": ", paste(names(dt_init)[init_all0], collapse = ", ")
+         , " \nRecommendation: adapt listParam$set_rollingWindowStartDate, remove or combine these channels")
+  }
+  
+  ## check adstock
+  
+  if((adstock %in% c("geometric", "weibull")) == F) {stop("adstock must be 'geometric' or 'weibull'")}
+  
+  ## check hyperparameter names in set_hyperBoundLocal
   global_name <- c("thetas",  "shapes",  "scales",  "alphas",  "gammas",  "lambdas")
   if (adstock == "geometric") {
     local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
@@ -80,7 +204,24 @@ f.inputParam <- function(listDT = parent.frame()$listDT
   }
   
   
+  ## check calibration
+  
+  if(nrow(set_lift)>0) {
+    if ((min(set_lift$liftStartDate) < min(listDT$dt_input[, get(set_dateVarName)])) | (max(set_lift$liftEndDate) >  (max(listDT$dt_input[, get(set_dateVarName)]) + dayInterval-1))) {
+      stop("we recommend you to only use lift results conducted within your MMM input data date range")
+    } else if (set_iter < 500 | set_trial < 80) {
+      message("you are calibrating MMM. we recommend to run at least 500 iterations per trial and at least 80 trials at the beginning")
+    }
+  } else {
+    if (set_iter < 500 | set_trial < 40) {message("\nwe recommend to run at least 500 iterations per trial and at least 40 trials at the beginning")}
+  }
+  
+  ## 
+  
   listParam <- list(set_dateVarName=set_dateVarName
+                    ,dayInterval=dayInterval
+                    ,intervalType=intervalType
+                    
                     ,set_depVarName=set_depVarName
                     #,set_depVarType=set_depVarType
                     
@@ -96,12 +237,18 @@ f.inputParam <- function(listDT = parent.frame()$listDT
                     ,set_mediaVarName=set_mediaVarName
                     ,set_mediaVarSign=set_mediaVarSign
                     ,set_mediaSpendName=set_mediaSpendName
+                    ,mediaVarCount=mediaVarCount
                     
                     ,set_factorVarName=set_factorVarName
                     
                     ,set_cores=set_cores
                     
-                    ,set_trainStartDate=set_trainStartDate
+                    ,set_rollingWindowStartDate=set_rollingWindowStartDate
+                    ,initRollWindStartWhich=initRollWindStartWhich
+                    ,set_rollingWindowEndDate=set_rollingWindowEndDate
+                    ,initRollWindEndWhich=initRollWindEndWhich
+                    ,initRollWindLength=initRollWindLength
+
                     ,adstock=adstock
                     ,set_iter=set_iter
                     
@@ -115,6 +262,7 @@ f.inputParam <- function(listDT = parent.frame()$listDT
   )
   
   assign("listParam", listParam, envir = .GlobalEnv)
+  assign("listDT", listDT, envir = .GlobalEnv)
 }
 
 
@@ -235,51 +383,6 @@ f.plotResponseCurves <- function(plotResponseCurves) {
   }
 }
 
-################################################################
-#### Define basic condition check function
-
-f.checkConditions <- function(dt_transform, listParam = parent.frame()$listParam) {
-  
-  if (!all(listParam$set_prophet %in% c("trend","season", "weekday", "holiday"))) {
-    stop("listParam$set_prophet must be 'trend', 'season', 'weekday' or 'holiday")
-  }
-  
-  if (!is.null(listParam$set_baseVarName)) {
-    if(length(listParam$set_baseVarName) != length(listParam$set_baseVarSign)) {stop("listParam$set_baseVarName and listParam$set_baseVarSign have to be the same length")}
-  }
-  
-  if (is.null(listParam$set_mediaVarName)) {
-    stop("listParam$set_mediaVarName must be specified")
-  } else {
-    if(length(listParam$set_mediaVarName) != length(listParam$set_mediaVarSign)) {stop("listParam$set_mediaVarName and listParam$set_mediaVarSign have to be the same length")}
-    if(!all(c(listParam$set_prophetVarSign, listParam$set_baseVarSign, listParam$set_mediaVarSign) %in% c("positive", "negative", "default"))) {
-      stop("listParam$set_prophetVarSign, listParam$set_baseVarSign & listParam$set_mediaVarSign must be 'positive', 'negative' or 'default'")}
-  }
-  
-  if(!is.null(listParam$set_lift)) {
-    # if(nrow(listParam$set_lift)==0 | !exists("listParam$set_lift")) {
-    #   stop("please provide lift result or set activate_calibration = FALSE")
-    # }
-    if ((min(listParam$set_lift$liftStartDate) < min(dt_transform$ds)) | (max(listParam$set_lift$liftEndDate) >  (max(dt_transform$ds) + listParam$dayInterval-1))) {
-      stop("we recommend you to only use lift results conducted within your MMM input data date range")
-    }
-    if (listParam$set_iter < 500 | listParam$set_trial < 80) {message("you are calibrating MMM. we recommend to run at least 500 iterations per trial and at least 80 trials at the beginning")}
-  } else {
-    if (listParam$set_iter < 500 | listParam$set_trial < 40) {message("\nwe recommend to run at least 500 iterations per trial and at least 40 trials at the beginning")}
-  }
-  
-  if((listParam$adstock %in% c("geometric", "weibull")) == F) {stop("adstock must be 'geometric' or 'weibull'")}
-  
-  num_hp_channel <- ifelse(listParam$adstock == "geometric", 3, 4)
-  if( all(str_detect(names(listParam$set_hyperBoundLocal) ,paste0(listParam$local_name, collapse = "|")))==F | length(unique(names(listParam$set_hyperBoundLocal))) != length(listParam$set_mediaVarName)*num_hp_channel) {
-    local_names <- f.getHyperNames()
-    stop("listParam$set_hyperBoundLocal has incorrect hyperparameters. names of hyperparameters must be: \n", paste(local_names, collapse = ", "))
-  }
-  
-  if(any(apply(dt_transform, 2, function(x) any(is.na(x) | is.infinite(x))))) {stop("input datafrom dt has NA or Inf")}
-  
-}
-
 #####################################
 #### Define helper unit format function for axis 
 
@@ -313,32 +416,17 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
   ## check date format
   tryCatch({
     dateCheck <- as.Date(dt_transform$ds)
-    dateCheckStart <- as.Date(listParam$set_trainStartDate)
+    dateCheckStart <- as.Date(listParam$set_rollingWindowStartDate)
   },
   error= function(cond) {
-    stop("input date variable and listParam$set_trainStartDate should have format '2020-01-01'")
+    stop("input date variable and listParam$set_rollingWindowStartDate should have format '2020-01-01'")
   })
   
   if (any(dateCheckStart< min(dt_transform$ds), dateCheckStart> max(dt_transform$ds))) {
-    stop("listParam$set_trainStartDate must be between ", min(dt_transform$ds) ," and ",max(dt_transform$ds))
+    stop("listParam$set_rollingWindowStartDate must be between ", min(dt_transform$ds) ," and ",max(dt_transform$ds))
   }
   
   ## check variables existence
-  
-  # if (!activate_prophet) {
-  #   assign("set_prophet", NULL, envir = .GlobalEnv)
-  #   assign("set_prophetVarSign", NULL, envir = .GlobalEnv)
-  # }
-  
-  # if (!activate_baseline) {
-  #   assign("set_baseVarName", NULL, envir = .GlobalEnv)
-  #   assign("set_baseVarSign", NULL, envir = .GlobalEnv)
-  # }
-  
-  
-  # if (!activate_calibration) {
-  #   assign("set_lift", NULL, envir = .GlobalEnv)
-  # }
   
   if (is.null(listParam$set_mediaSpendName)) {stop("listParam$set_mediaSpendName must be specified")
   } else if(length(listParam$set_mediaVarName) != length(listParam$set_mediaSpendName)) {
@@ -347,20 +435,19 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
   
   #trainSize <- round(nrow(dt_transform)* set_modTrainSize)
   #dt_train <- dt_transform[1:trainSize, listParam$set_mediaVarName, with =F]
-  trainStartWhich <- which.min(abs(difftime(as.Date(dt_transform$ds), as.Date(listParam$set_trainStartDate), units = "days")))
-  dt_train <- dt_transform[trainStartWhich:nrow(dt_transform), listParam$set_mediaVarName, with =F]
-  train_all0 <- colSums(dt_train)==0
-  if(any(train_all0)) {
-    stop("These media channels contains only 0 within training period ",dt_transform$ds[trainStartWhich], " to ", max(dt_transform$ds), ": ", paste(names(dt_train)[train_all0], collapse = ", ")
-         , " \nRecommendation: adapt listParam$set_trainStartDate, remove or combine these channels")
-  }
+  # trainStartWhich <- which.min(abs(difftime(as.Date(dt_transform$ds), as.Date(listParam$set_rollingWindowStartDate), units = "days")))
+  # dt_train <- dt_transform[trainStartWhich:nrow(dt_transform), listParam$set_mediaVarName, with =F]
+  # train_all0 <- colSums(dt_train)==0
+  # if(any(train_all0)) {
+  #   stop("These media channels contains only 0 within training period ",dt_transform$ds[trainStartWhich], " to ", max(dt_transform$ds), ": ", paste(names(dt_train)[train_all0], collapse = ", ")
+  #        , " \nRecommendation: adapt listParam$set_rollingWindowStartDate, remove or combine these channels")
+  # }
   
   
   #hypName <- c("thetas", "shapes", "scales", "alphas", "gammas", "lambdas") # defind hyperparameter names
-  dayInterval <- as.integer(difftime(sort(unique(dt_transform$ds))[2], sort(unique(dt_transform$ds))[1], units = "days"))
-  intervalType <- if(dayInterval==1) {"day"} else if (dayInterval==7) {"week"} else if (dayInterval %in% 28:31) {"month"} else {stop("input data has to be daily, weekly or monthly")}
-  #assign("dayInterval", dayInterval, envir = .GlobalEnv)
-  mediaVarCount <- length(listParam$set_mediaVarName)
+  #dayInterval <- as.integer(difftime(sort(unique(dt_transform$ds))[2], sort(unique(dt_transform$ds))[1], units = "days"))
+  #intervalType <- if(dayInterval==1) {"day"} else if (dayInterval==7) {"week"} else if (dayInterval %in% 28:31) {"month"} else {stop("input data has to be daily, weekly or monthly")}
+  #mediaVarCount <- length(listParam$set_mediaVarName)
   
   ################################################################
   #### model exposure metric from spend
@@ -374,7 +461,7 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
     modNLSCollect <- list()
     yhatCollect <- list()
     plotNLSCollect <- list()
-    for (i in 1:mediaVarCount) {
+    for (i in 1:listParam$mediaVarCount) {
       if (costSelector[i]) {
         dt_spendModInput <- listDT$dt_input[, c(listParam$set_mediaSpendName[i],listParam$set_mediaVarName[i]), with =F]
         setnames(dt_spendModInput, names(dt_spendModInput), c("spend", "exposure"))
@@ -476,20 +563,12 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
     modNLSCollect <- rbindlist(modNLSCollect)
     yhatNLSCollect <- rbindlist(yhatCollect)
     yhatNLSCollect[, ds:= rep(dt_transform$ds, nrow(yhatNLSCollect)/nrow(dt_transform))]
-    #assign("plotNLSCollect", plotNLSCollect, envir = .GlobalEnv)
-    #assign("modNLSCollect", modNLSCollect, envir = .GlobalEnv)
-    #assign("yhatNLSCollect", yhatNLSCollect, envir = .GlobalEnv)
     
   }
   
   getSpendSum <- listDT$dt_input[, lapply(.SD, sum), .SDcols=listParam$set_mediaSpendName]
   names(getSpendSum) <- listParam$set_mediaVarName
   getSpendSum <- suppressWarnings(melt.data.table(getSpendSum, measure.vars= listParam$set_mediaVarName, variable.name = "rn", value.name = "spend"))
-  
-  #assign("mediaCostFactor", mediaCostFactor, envir = .GlobalEnv)
-  #assign("costSelector", costSelector, envir = .GlobalEnv)
-  #assign("getSpendSum", getSpendSum, envir = .GlobalEnv)
-  
   
   ################################################################
   #### clean & aggregate data
@@ -502,7 +581,6 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
   ## transform all factor variables
 
   if (length(listParam$set_factorVarName)>0) {
-    #set_factorVarName <- toupper(set_factorVarName)
     dt_transform[, (listParam$set_factorVarName):= as.factor(get(listParam$set_factorVarName)) ]
   } 
   
@@ -521,23 +599,23 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
     use_weekday <- any(str_detect("weekday", listParam$set_prophet))
     use_holiday <- any(str_detect("holiday", listParam$set_prophet))
     
-    if (intervalType == "day") {
+    if (listParam$intervalType == "day") {
       
       holidays <- listDT$dt_holidays
       
-    } else if (intervalType == "week") {
+    } else if (listParam$intervalType == "week") {
       
       weekStartInput <- weekdays(dt_transform[1, ds])
       weekStartMonday <- if(weekStartInput=="Monday") {TRUE} else if (weekStartInput=="Sunday") {FALSE} else {stop("week start has to be Monday or Sunday")}
-      listDT$dt_holidays[, dsWeekStart:= cut(as.Date(ds), breaks = intervalType, start.on.monday = weekStartMonday)]
+      listDT$dt_holidays[, dsWeekStart:= cut(as.Date(ds), breaks = listParam$intervalType, start.on.monday = weekStartMonday)]
       holidays <- listDT$dt_holidays[, .(ds=dsWeekStart, holiday, country, year)]
       holidays <- holidays[, lapply(.SD, paste0, collapse="#"), by = c("ds", "country", "year"), .SDcols = "holiday"]
       
-    } else if (intervalType == "month") {
+    } else if (listParam$intervalType == "month") {
       
       monthStartInput <- all(day(dt_transform[, ds]) ==1)
       if (monthStartInput==FALSE) {stop("monthly data should have first day of month as datestampe, e.g.'2020-01-01' ")}
-      listDT$dt_holidays[, dsMonthStart:= cut(as.Date(ds), intervalType)]
+      listDT$dt_holidays[, dsMonthStart:= cut(as.Date(ds), listParam$intervalType)]
       holidays <- listDT$dt_holidays[, .(ds=dsMonthStart, holiday, country, year)]
       holidays <- holidays[, lapply(.SD, paste0, collapse="#"), by = c("ds", "country", "year"), .SDcols = "holiday"]
       
@@ -553,7 +631,7 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
                              #,changepoint.prior.scale = 0.1
     )
     
-    #futureDS <- make_future_dataframe(modelRecurrance, periods=1, freq = intervalType)
+    #futureDS <- make_future_dataframe(modelRecurrance, periods=1, freq = listParam$intervalType)
     forecastRecurrance <- predict(modelRecurrance, dt_transform[, "ds", with =F])
     
     # if (use_regressor) {
@@ -569,10 +647,7 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
     #   forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",listParam$set_baseVarName, listParam$set_mediaVarName), with =F])
     #   prophet_plot_components(modelRecurrance, forecastRecurrance)
     # }
-    
-    
-    #assign("modelRecurrance", modelRecurrance, envir = .GlobalEnv)
-    #assign("forecastRecurrance", forecastRecurrance, envir = .GlobalEnv)
+
     #plot(modelRecurrance, forecastRecurrance)
     #prophet_plot_components(modelRecurrance, forecastRecurrance, render_plot = T)
     
@@ -605,17 +680,15 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
   dt_transform <- dt_transform[, all_mod_name, with = F]
   
   listDT$dt_mod <- dt_transform
-  listDT[['forecastRecurrance']] <- forecastRecurrance
-  listDT[['modelRecurrance']] <- modelRecurrance  
-  #listParam[['getSpendSum']] <- getSpendSum
+  
   listParam[['modNLSCollect']] <- modNLSCollect
   listParam[['plotNLSCollect']] <- plotNLSCollect  
   listParam[['yhatNLSCollect']] <- yhatNLSCollect  
   listParam[['costSelector']] <- costSelector  
   listParam[['mediaCostFactor']] <- mediaCostFactor  
-  listParam[['dayInterval']] <- dayInterval  
+  #listParam[['dayInterval']] <- dayInterval  
   
-  f.checkConditions(dt_transform = dt_transform, listParam = listParam)
+  #f.checkConditions(dt_transform = dt_transform, listParam = listParam)
   
   assign("listDT", listDT, envir = .GlobalEnv)
   assign("listParam", listParam, envir = .GlobalEnv)
@@ -625,12 +698,12 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
 ################################################################
 #### Define hyperparameter names extraction function
 
-f.getHyperNames <- function(listParam = parent.frame()$listParam) {
+f.getHyperNames <- function(adstock = parent.frame()$listParam$adstock, set_mediaVarName=parent.frame()$listParam$set_mediaVarName) {
   global_name <- c("thetas",  "shapes",  "scales",  "alphas",  "gammas",  "lambdas")
-  if (listParam$adstock == "geometric") {
-    local_name <- sort(apply(expand.grid(listParam$set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
-  } else if (listParam$adstock == "weibull") {
-    local_name <- sort(apply(expand.grid(listParam$set_mediaVarName, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
+  if (adstock == "geometric") {
+    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
+  } else if (adstock == "weibull") {
+    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
   }
   return(local_name)
 }
@@ -666,6 +739,12 @@ f.adstockWeibull <- function(x, shape , scale) {
   x_decayed <- rowSums(x_decayed)
   
   return(list(x_decayed=x_decayed, thetaVecCum = thetaVecCum))
+}
+
+f.hill <- function(x, alpha, gamma) {
+  gammaTrans <- round(quantile(seq(range(x)[1], range(x)[2], length.out = 100), gamma),4)
+  x_scurve <-  x**alpha / (x**alpha + gammaTrans**alpha) # plot(x_scurve) summary(x_scurve)
+  return(x_scurve)
 }
 
 ################################################
@@ -917,10 +996,8 @@ f.mmm <- function(...
                   , listParam = parent.frame()$listParam
                   , listDT = parent.frame()$listDT
                   , set_iter = parent.frame()$listParam$set_iter
-                  #, set_cores = 1
                   , lambda.n = 100
                   , fixed.out = F
-                  #, optimizer_name = "DiscreteOnePlusOne" # c("DiscreteOnePlusOne", "DoubleFastGADiscreteOnePlusOne", "TwoPointsDE", "DE")
                   , fixed.lambda = NULL
 ) {
   
@@ -980,11 +1057,8 @@ f.mmm <- function(...
   dt_mod <- listDT$dt_mod
   set_mediaVarName <- listParam$set_mediaVarName
   adstock <- listParam$adstock
-  #set_modTrainSize <- set_modTrainSize
-  #activate_calibration <- activate_calibration
   set_baseVarSign <- listParam$set_baseVarSign
   set_mediaVarSign <- listParam$set_mediaVarSign
-  #activate_prophet <- activate_prophet
   set_prophetVarSign <- listParam$set_prophetVarSign
   #set_factorVarName <- listParam$set_factorVarName
   set_lift <- listParam$set_lift
@@ -1010,9 +1084,10 @@ f.mmm <- function(...
   ################################################
   #### Get spend share
   
-  trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listParam$set_trainStartDate), units = "days")))
-  dt_inputTrain <- listDT$dt_input[listDT$dt_input[, rank(.SD), .SDcols = listParam$set_dateVarName]]
-  dt_inputTrain <- dt_inputTrain[trainStartWhich:nrow(dt_inputTrain)]
+  #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listParam$set_rollingWindowStartDate), units = "days")))
+  #dt_inputTrain <- listDT$dt_input[listDT$dt_input[, rank(.SD), .SDcols = listParam$set_dateVarName]]
+  #dt_inputTrain <- dt_inputTrain[trainStartWhich:nrow(dt_inputTrain)]
+  dt_inputTrain <- listDT$dt_input[listParam$initRollWindStartWhich:listParam$initRollWindEndWhich]
   dt_spendShare <- dt_inputTrain[, .(rn = listParam$set_mediaVarName,
                                      total_spend = sapply(.SD, sum),
                                      mean_spend = sapply(.SD, function(x) mean(x[x>0]))), .SDcols=listParam$set_mediaSpendName]
@@ -1045,7 +1120,7 @@ f.mmm <- function(...
     instrumentation <- ng$p$Array(shape=my_tuple)
     instrumentation$set_bounds(0., 1.)
     optimizer <-  ng$optimizers$registry[optimizer_name](instrumentation, budget=iterTotal, num_workers=listParam$set_cores)
-    if (is.null(set_lift)) {
+    if (nrow(set_lift)==0) {
       optimizer$tell(ng$p$MultiobjectiveReference(), tuple(1.0, 1.0))
     } else {
       optimizer$tell(ng$p$MultiobjectiveReference(), tuple(1.0, 1.0, 1.0))
@@ -1169,8 +1244,8 @@ f.mmm <- function(...
         #trainSize <- round(nrow(dt_modAdstocked)* set_modTrainSize)
         #dt_train <- dt_modAdstocked[1:trainSize]
         #dt_test <- dt_modAdstocked[(trainSize+1):nrow(dt_modAdstocked)]
-        #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listParam$set_trainStartDate), units = "days")))
-        dt_train <- dt_modAdstocked[trainStartWhich:nrow(dt_modAdstocked)]
+        #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listParam$set_rollingWindowStartDate), units = "days")))
+        dt_train <- dt_modAdstocked[listParam$initRollWindStartWhich:nrow(dt_modAdstocked)]
         
         ## contrast matrix because glmnet does not treat categorical variables
         y_train <- dt_train$depVar
@@ -1247,7 +1322,7 @@ f.mmm <- function(...
           #####################################
           #### get calibration mape
           
-         if (!is.null(set_lift)) {
+         if (nrow(set_lift)>0) {
 
             liftCollect <- f.calibrateLift(decompCollect=decompCollect, set_lift=set_lift)
             mape <- liftCollect[, mean(mape_lift)]
@@ -1311,7 +1386,7 @@ f.mmm <- function(...
                                                        ,lambda=lambda
                                                        ,iterPar= i
                                                        ,iterNG = lng)] ,
-          liftCalibration = if (!is.null(set_lift)) {liftCollect[, ':='(mape = mape
+          liftCalibration = if (nrow(set_lift)>0) {liftCollect[, ':='(mape = mape
                                                                           ,nrmse = nrmse
                                                                           ,decomp.rssd = decomp.rssd
                                                                           ,adstock.ssisd = adstock.ssisd
@@ -1355,7 +1430,7 @@ f.mmm <- function(...
       #### Nevergrad tells objectives
       
       if (fixed.out == F) {
-        if (is.null(set_lift)) {
+        if (nrow(set_lift)==0) {
           for (co in 1:iterPar) {
             optimizer$tell(nevergrad_hp[[co]], tuple(nrmse.coolect[co], decomp.rssd.coolect[co])) 
           }
@@ -1383,7 +1458,7 @@ f.mmm <- function(...
   if (fixed.out == F) {
     pareto_results<-transpose(rbind(as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$value[],4))),
                                     as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$losses[],4)))))
-    if (is.null(set_lift)) {
+    if (nrow(set_lift)==0) {
       pareto_results_names<-setnames(pareto_results, old=names(pareto_results), new=c(hyper_bound_local_ng_name,"nrmse", "decomp.rssd") )
       pareto_results_ordered<-setorder(pareto_results_names, "nrmse", "decomp.rssd")
     } else {
@@ -1402,7 +1477,7 @@ f.mmm <- function(...
     resultHypParam = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$resultHypParam))}))[order(nrmse)],
     xDecompVec = if (fixed.out==T) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompVec))}))[order(nrmse, ds)]} else {NULL},
     xDecompAgg =   rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompAgg))}))[order(nrmse)],
-    liftCalibration = if(!is.null(set_lift)) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$liftCalibration))}))[order(mape, liftMedia, liftStart)]} else {NULL},
+    liftCalibration = if(nrow(set_lift)>0) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$liftCalibration))}))[order(mape, liftMedia, liftStart)]} else {NULL},
     decompSpendDist = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$decompSpendDist))}))[order(nrmse)],
     #mape = unlist(lapply(doparCollect, function(x) x$mape)),
     #iterRS = unlist(lapply(doparCollect, function(x) x$iterRS)),
@@ -1432,10 +1507,6 @@ f.mmm <- function(...
 
 f.robyn <- function(listParam = parent.frame()$listParam
                     ,listDT = parent.frame()$listDT
-                    #,set_hyperBoundLocal = set_hyperBoundLocal
-                    #,optimizer_name = set_hyperOptimAlgo
-                    #,set_trial = set_trial 
-                    #,set_cores = set_cores
                     ,plot_folder = getwd()
                     ,fixed.out = F
                     ,fixed.hyppar.dt = NULL
@@ -1629,9 +1700,19 @@ f.robyn <- function(listParam = parent.frame()$listParam
     ## plot prophet
     
     if (!is.null(listParam$set_prophet)) {
-      pProphet <- prophet_plot_components(listDT$modelRecurrance, listDT$forecastRecurrance, render_plot = T)
-      # ggsave(paste0(plot_folder, "/", plot_folder_sub,"/", "prophet.png")
-      #        , dpi = 600, width = 12, height = 7)
+      # pProphet <- prophet_plot_components(listDT$modelRecurrance, listDT$forecastRecurrance, render_plot = T)
+
+      dt_plotProphet <- listDT$dt_mod[, c('ds','depVar', listParam$set_prophet), with = F]
+      dt_plotProphet <- melt.data.table(dt_plotProphet, id.vars = 'ds')
+      pProphet <- ggplot(dt_plotProphet, aes(x=ds, y=value)) + 
+        geom_line(color='steelblue')+ 
+        facet_wrap(~ variable, scales="free", ncol = 1) +
+        labs(title = 'Prophet decomposition') + xlab(NULL) + ylab(NULL)
+      print(pProphet)
+      ggsave(paste0(plot_folder, "/", plot_folder_sub,"/", "prophet_decomp.png")
+             , plot = pProphet
+             , dpi = 600, width = 12, height = 3*length(levels(dt_plotProphet$variable)))
+
     }
     
     
@@ -2073,10 +2154,6 @@ f.robyn.fixed <- function(plot_folder = getwd()
   
   ## run f.robyn
   model_output_collect <- f.robyn(listParam = parent.frame()$listParam
-                                  #,set_hyperBoundLocal = set_hyperBoundLocal
-                                  #,optimizer_name = set_hyperOptimAlgo
-                                  #,set_trial = set_trial
-                                  #,set_cores = set_cores
                                   ,plot_folder = plot_folder
                                   ,fixed.out = T
                                   ,fixed.hyppar.dt = dt_hyppar_fixed)
