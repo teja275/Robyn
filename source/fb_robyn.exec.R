@@ -110,7 +110,7 @@ f.inputParam(set_dateVarName = "DATE" # date format must be "2020-01-01"
              ## set rolling window start (only works for whole dataset for now)
              #,set_rollingWindowStartDate = "2019-04-29"
              ,set_rollingWindowStartDate = "2016-11-23" 
-             ,set_rollingWindowEndDate = "2017-11-22"
+             ,set_rollingWindowEndDate = "2018-08-22"
              
              ## set model core features
              ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
@@ -227,7 +227,7 @@ model_output_collect <- f.robyn(plot_folder = "~/Documents/GitHub/plots", pareto
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
 model_output_collect$allSolutions
-optim_result <- f.budgetAllocator(modID = "2_8_4" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+optim_result <- f.budgetAllocator(modID = "2_13_3" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
                                   ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
                                   ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                                   #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
