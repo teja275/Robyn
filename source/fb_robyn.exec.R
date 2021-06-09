@@ -1,11 +1,11 @@
-# 1.functionalise input/ remove global param to enable packaging: f.inputDT, f.inputParam, f.featureEngineering, f.checkDependencies?
+# 1.functionalise input/ remove global param to enable packaging: f.inputDT, f.inputParam, f.featureEngineering done
 # 2.rolling window width, cadance and output
 # 3.plot enhancement: prophet plot to be replaced, channel detail plot for selecte model f.plotModel (saturation + mROI), correlation matrix for f.inputDT, "reporting" of rolling results
 # 4.add pareto clustering
-# 5.get mROI function?
+# 5.get mROI function? done
 # 6.organic channels
 # 7.decomp fix for categorical vars?
-# 8.nls fit: try Hill? rewrite trycatch?
+# 8.nls fit: try Hill? rewrite trycatch? done
 
 # returning pParFront, change cat() to message() for shiny
 
@@ -213,12 +213,25 @@ f.featureEngineering()
 ################################################################
 #### Run models
 
-model_output_collect <- f.robyn(plot_folder = "~/Documents/GitHub/plots", pareto_fronts = 3) # please set your folder path to save plots. It ends without "/".
+f.robyn(plot_folder = "~/Documents/GitHub/plots", pareto_fronts = 1) # please set your folder path to save plots. It ends without "/".
 
 ## reload old models from csv
 
 #dt_hyppar_fixed <- fread("/Users/gufengzhou/Downloads/2021-05-17 10.41/pareto_hyperparameters.csv") # load hyperparameter csv. Provide your own path.
 #model_output_collect <- f.robyn.fixed(plot_folder = "~/Documents/GitHub/plots", dt_hyppar_fixed = dt_hyppar_fixed[solID == "14_24_1"]) # solID must be included in the csv
+
+
+################################################################
+#### get marginal returns
+Spend <- 1000
+Response <- f.response(mediaVarName = "facebook_I", modID = "3_4_1", Spend = Spend) 
+Response/Spend
+
+Spend1 <- 1001
+Response1 <- f.response(mediaVarName = "facebook_I", modID = "3_4_1", Spend = Spend1) 
+Response1/Spend1
+
+Response1-Response
 
 ################################################################
 #### Budget Allocator - Beta
@@ -226,12 +239,12 @@ model_output_collect <- f.robyn(plot_folder = "~/Documents/GitHub/plots", pareto
 ## Budget allocator result requires further validation. Please use this result with caution.
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
-model_output_collect$allSolutions
-optim_result <- f.budgetAllocator(modID = "2_13_3" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
-                                  ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
-                                  ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
-                                  #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
-                                  #,expected_spend_days = 90 # specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
-                                  ,channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as set_mediaVarName
-                                  ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
+listOutput$allSolutions
+f.budgetAllocator(modID = "1_6_1" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+                  ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
+                  ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
+                  #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
+                  #,expected_spend_days = 90 # specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
+                  ,channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as set_mediaVarName
+                  ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
 )

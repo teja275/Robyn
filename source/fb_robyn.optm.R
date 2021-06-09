@@ -41,9 +41,9 @@ f.budgetAllocator <- function(modID = NULL
   }
   
   ## get dt 
-  dt_bestHyperParam <- model_output_collect$resultHypParam[solID == modID]
+  dt_bestHyperParam <- listOutput$resultHypParam[solID == modID]
   if (!(modID %in% dt_bestHyperParam$solID)) {stop("provided modID is not within the best results")}
-  dt_bestCoef <- model_output_collect$xDecompAgg[solID == modID & rn %in% listParam$set_mediaVarName]
+  dt_bestCoef <- listOutput$xDecompAgg[solID == modID & rn %in% listParam$set_mediaVarName]
   
   dt_spendShare <- listDT$dt_input[listDT$dt_input[, rank(.SD), .SDcols = listParam$set_dateVarName]]
   dt_spendShare <- dt_spendShare[, .(rn = listParam$set_mediaVarName,
@@ -162,12 +162,13 @@ f.budgetAllocator <- function(modID = NULL
     return(
       list(
         "objective" = -sum(
-          mapply(function(x, costMultiplier, adstockMultiplier, coeff
+          mapply(function(x #, costMultiplier, adstockMultiplier
+                          , coeff
                           , alpha, gammaTran
                           , chnName, vmax, km, criteria) {
             # apply Michaelis Menten model to scale spend to exposure
             if (criteria) {
-              xScaled <- vmax * x / (km + x)
+              xScaled <- f.micMen(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
             } else if (chnName %in% names(mm_lm_coefs)) {
                 xScaled <- x * mm_lm_coefs[chnName]
             } else {
@@ -182,7 +183,8 @@ f.budgetAllocator <- function(modID = NULL
             xOut <- coeff * sum( (1 + gammaTran**alpha / xAdstocked **alpha)**-1)
             
             return(xOut)
-          }, x=X, costMultiplier = costMultiplierVec, adstockMultiplier=adstockMultiplierVec, coeff = coefs
+          }, x=X #, costMultiplier = costMultiplierVec, adstockMultiplier=adstockMultiplierVec
+          , coeff = coefs
           , alpha = alphas, gammaTran = gammaTrans
           , chnName = channelNames
           , vmax = vmaxVec, km = kmVec, criteria = costSelectorSorted
@@ -190,12 +192,13 @@ f.budgetAllocator <- function(modID = NULL
         ),
         
         "gradient" = c(
-          mapply(function(x, costMultiplier, adstockMultiplier, coeff
+          mapply(function(x # , costMultiplier, adstockMultiplier
+                          , coeff
                           , alpha, gammaTran
                           , chnName, vmax, km, criteria) {
             # apply Michaelis Menten model to scale spend to exposure
             if (criteria) {
-              xScaled <- vmax * x / (km + x)
+              xScaled <- f.micMen(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
             } else if (chnName %in% names(mm_lm_coefs)) {
               xScaled <- x * mm_lm_coefs[chnName]
             } else {
@@ -209,7 +212,8 @@ f.budgetAllocator <- function(modID = NULL
             xOut <- -coeff * sum((alpha * (gammaTran**alpha) * (xAdstocked**(alpha-1))) / (xAdstocked**alpha + gammaTran**alpha)**2)
             
             return(xOut)
-          }, x=X, costMultiplier = costMultiplierVec, adstockMultiplier=adstockMultiplierVec, coeff = coefs
+          }, x=X #, costMultiplier = costMultiplierVec, adstockMultiplier=adstockMultiplierVec
+          , coeff = coefs
           , alpha = alphas, gammaTran = gammaTrans
           , chnName = channelNames
           , vmax = vmaxVec, km = kmVec, criteria = costSelectorSorted
@@ -217,13 +221,14 @@ f.budgetAllocator <- function(modID = NULL
         ), # https://www.derivative-calculator.net/ on the objective function 1/(1+gamma^alpha / x^alpha)
         
         "objective.channel" =
-          mapply(function(x, costMultiplier, adstockMultiplier, coeff
+          mapply(function(x # , costMultiplier, adstockMultiplier
+                          , coeff
                           , alpha, gammaTran
                           , chnName, vmax, km, criteria) {
             
             # apply Michaelis Menten model to scale spend to exposure
             if (criteria) {
-              xScaled <- vmax * x / (km + x)
+              xScaled <-  f.micMen(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
             } else if (chnName %in% names(mm_lm_coefs)) {
               xScaled <- x * mm_lm_coefs[chnName]
             } else {
@@ -237,7 +242,8 @@ f.budgetAllocator <- function(modID = NULL
             xOut <- -coeff * sum( (1 + gammaTran**alpha / xAdstocked **alpha)**-1)
             
             return(xOut)
-          }, x=X, costMultiplier = costMultiplierVec, adstockMultiplier=adstockMultiplierVec, coeff = coefs
+          }, x=X #, costMultiplier = costMultiplierVec, adstockMultiplier=adstockMultiplierVec
+          , coeff = coefs
           , alpha = alphas, gammaTran = gammaTrans
           , chnName = channelNames
           , vmax = vmaxVec, km = kmVec, criteria = costSelectorSorted
@@ -249,7 +255,7 @@ f.budgetAllocator <- function(modID = NULL
   
   ## build contraints function with scenarios
   nPeriod <- nrow(dt_optimCost)
-  xDecompAggMedia <- model_output_collect$xDecompAgg[solID==modID & rn %in% listParam$set_mediaVarName][order(rank(rn))]
+  xDecompAggMedia <- listOutput$xDecompAgg[solID==modID & rn %in% listParam$set_mediaVarName][order(rank(rn))]
   
   if (scenario == "max_historical_response") {
     expected_spend <- sum(xDecompAggMedia$total_spend)
@@ -450,11 +456,11 @@ f.budgetAllocator <- function(modID = NULL
   
   ## response curve
   
-  plotDT_saturation <- melt.data.table(model_output_collect$mediaVecCollect[solID==modID & type == "saturatedSpendReversed"], id.vars = "ds", measure.vars = listParam$set_mediaVarName, value.name = "spend", variable.name = "channel")
-  plotDT_decomp <- melt.data.table(model_output_collect$mediaVecCollect[solID==modID & type == "decompMedia"], id.vars = "ds", measure.vars = listParam$set_mediaVarName, value.name = "response", variable.name = "channel")
+  plotDT_saturation <- melt.data.table(listOutput$mediaVecCollect[solID==modID & type == "saturatedSpendReversed"], id.vars = "ds", measure.vars = listParam$set_mediaVarName, value.name = "spend", variable.name = "channel")
+  plotDT_decomp <- melt.data.table(listOutput$mediaVecCollect[solID==modID & type == "decompMedia"], id.vars = "ds", measure.vars = listParam$set_mediaVarName, value.name = "response", variable.name = "channel")
   plotDT_scurve <- cbind(plotDT_saturation, plotDT_decomp[, .(response)])
   plotDT_scurve <- plotDT_scurve[spend>=0] # remove outlier introduced by MM nls fitting
-  plotDT_scurveMeanResponse <- model_output_collect$xDecompAgg[solID==modID & rn %in% listParam$set_mediaVarName]
+  plotDT_scurveMeanResponse <- listOutput$xDecompAgg[solID==modID & rn %in% listParam$set_mediaVarName]
   dt_optimOutScurve <- rbind(dt_optimOut[, .(channels, initSpendUnit, initResponseUnit)][, type:="initial"], dt_optimOut[, .(channels, optmSpendUnit, optmResponseUnit)][, type:="optimised"], use.names = F)
   setnames(dt_optimOutScurve, c("channels", "spend", "response", "type"))
   
@@ -486,13 +492,16 @@ f.budgetAllocator <- function(modID = NULL
   layout <- cbind(c(1,2), c(3,3))
   g <- grid.arrange(g13, g12, g14,   layout_matrix=layout, top = text_grob(grobTitle, size = 15, face = "bold"))
   
-  cat("\nSaving plots to ", paste0(model_output_collect$folder_path, modID,"_reallocated.png"), "...\n")
-  ggsave(filename=paste0(model_output_collect$folder_path, modID,"_reallocated.png")
+  cat("\nSaving plots to ", paste0(listOutput$folder_path, modID,"_reallocated.png"), "...\n")
+  ggsave(filename=paste0(listOutput$folder_path, modID,"_reallocated.png")
          , plot = g
          , dpi = 400, width = 18, height = 14)
   
-  fwrite(dt_optimOut, paste0(model_output_collect$folder_path, modID,"_reallocated.csv"))
-  return(list(dt_optimOut=dt_optimOut, nlsMod=nlsMod))
+  fwrite(dt_optimOut, paste0(listOutput$folder_path, modID,"_reallocated.csv"))
+  
+  listOutputAllocator <- list(dt_optimOut=dt_optimOut, nlsMod=nlsMod)
+  assign("listOutputAllocator", listOutputAllocator, envir = .GlobalEnv)
+  #return(listOutputAllocator)
 }
 
 

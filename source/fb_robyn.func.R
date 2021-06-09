@@ -409,21 +409,25 @@ f.unit_format <- function(x_in) {
 
 f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = parent.frame()$listParam) {
   
-  dt_transform <- copy(dt_transform)
+  dt_input <- copy(dt_transform) # dt_input <- copy(listDT$dt_input)
+  dt_inputRollWind <- dt_input[listParam$initRollWindStartWhich:listParam$initRollWindEndWhich] # dt_inputRollWind <- listDT$dt_input[listParam$initRollWindStartWhich:listParam$initRollWindEndWhich]
+  
+  dt_transform <- copy(dt_transform) # dt_transform <- copy(listDT$dt_input)
   setnames(dt_transform, listParam$set_dateVarName, "ds", skip_absent = T)
   dt_transform <- dt_transform[, ':='(ds= as.Date(ds))][order(ds)]
+  dt_transformRollWind <- dt_transform[listParam$initRollWindStartWhich:listParam$initRollWindEndWhich]
   
   setnames(dt_transform, listParam$set_depVarName, "depVar", skip_absent = T) #; listParam$set_depVarName <- "depVar"
   #indepName <- c(listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName)
   
   ## check date format
-  tryCatch({
-    dateCheck <- as.Date(dt_transform$ds)
-    dateCheckStart <- as.Date(listParam$set_rollingWindowStartDate)
-  },
-  error= function(cond) {
-    stop("input date variable and listParam$set_rollingWindowStartDate should have format '2020-01-01'")
-  })
+  # tryCatch({
+  #   dateCheck <- as.Date(dt_transform$ds)
+  #   dateCheckStart <- as.Date(listParam$set_rollingWindowStartDate)
+  # },
+  # error= function(cond) {
+  #   stop("input date variable and listParam$set_rollingWindowStartDate should have format '2020-01-01'")
+  # })
   
   # if (any(dateCheckStart< min(dt_transform$ds), dateCheckStart> max(dt_transform$ds))) {
   #   stop("listParam$set_rollingWindowStartDate must be between ", min(dt_transform$ds) ," and ",max(dt_transform$ds))
@@ -455,7 +459,7 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
   ################################################################
   #### model exposure metric from spend
   
-  mediaCostFactor <- unlist(listDT$dt_input[, lapply(.SD, sum), .SDcols = listParam$set_mediaSpendName] / listDT$dt_input[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName])
+  mediaCostFactor <- unlist(dt_inputRollWind[, lapply(.SD, sum), .SDcols = listParam$set_mediaSpendName] / dt_inputRollWind[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName])
   names(mediaCostFactor) <- listParam$set_mediaVarName
   costSelector <- !(listParam$set_mediaSpendName == listParam$set_mediaVarName)
   names(costSelector) <- listParam$set_mediaVarName
@@ -466,7 +470,7 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
     plotNLSCollect <- list()
     for (i in 1:listParam$mediaVarCount) {
       if (costSelector[i]) {
-        dt_spendModInput <- listDT$dt_input[, c(listParam$set_mediaSpendName[i],listParam$set_mediaVarName[i]), with =F]
+        dt_spendModInput <- dt_inputRollWind[, c(listParam$set_mediaSpendName[i],listParam$set_mediaVarName[i]), with =F]
         setnames(dt_spendModInput, names(dt_spendModInput), c("spend", "exposure"))
         #dt_spendModInput <- dt_spendModInput[spend !=0 & exposure != 0]
         
@@ -489,42 +493,48 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
         #                ,control = nls.control(warnOnly = T)
         # )
         
-        modNLS <- tryCatch(
+        tryCatch(
           {
+            #dt_spendModInput[, exposure:= rep(0,(nrow(dt_spendModInput)))]
             nlsStartVal <- list(Vmax = dt_spendModInput[, max(exposure)], Km = dt_spendModInput[, max(exposure)/2])
             suppressWarnings(modNLS <- nlsLM(exposure ~ Vmax * spend/(Km + spend), #Michaelis-Menten model Vmax * spend/(Km + spend)
                                       data = dt_spendModInput,
                                       start = nlsStartVal
                                       ,control = nls.control(warnOnly = T)))
+            
+            yhatNLS <- predict(modNLS)
+            modNLSSum <- summary(modNLS)
+            
+            # QA nls model prediction
+            yhatNLSQA <- modNLSSum$coefficients[1,1] * dt_spendModInput$spend / (modNLSSum$coefficients[2,1] + dt_spendModInput$spend) #exposure = v  * spend / (k + spend)
+            identical(yhatNLS, yhatNLSQA)
+            
+            rsq_nls <- f.rsq(dt_spendModInput$exposure, yhatNLS) 
           },
           
           error=function(cond) {
-            nlsStartVal <- list(Vmax=1, Km=1)
-            suppressWarnings(modNLS <- nlsLM(exposure ~ Vmax * spend/(Km + spend), #Michaelis-Menten model Vmax * spend/(Km + spend)
-                                             data = dt_spendModInput,
-                                             start = nlsStartVal
-                                             ,control = nls.control(warnOnly = T)))
-            #warning("default start value for nls out of range. using c(1,1) instead")
-            return(modNLS)
+            # nlsStartVal <- list(Vmax=1, Km=1)
+            # suppressWarnings(modNLS <- nlsLM(exposure ~ Vmax * spend/(Km + spend), #Michaelis-Menten model Vmax * spend/(Km + spend)
+            #                                  data = dt_spendModInput,
+            #                                  start = nlsStartVal
+            #                                  ,control = nls.control(warnOnly = T)))
+            # warning("default start value for nls out of range. using c(1,1) instead")
+            # return(modNLS)
+            modNLS <- NULL; yhatNLS <- NULL; modNLSSum <- NULL; rsq_nls <- NULL
+            message("michaelis menten fitting for ", listParam$set_mediaVarName[i]," out of range. using lm instead")
+
           }
         )
-        
-        yhatNLS <- predict(modNLS)
-        modNLSSum <- summary(modNLS)
-        
-        # QA nls model prediction
-        yhatNLSQA <- modNLSSum$coefficients[1,1] * dt_spendModInput$spend / (modNLSSum$coefficients[2,1] + dt_spendModInput$spend)
-        identical(yhatNLS, yhatNLSQA)
         
         # build lm comparison model
         modLM <- lm(exposure ~ spend-1, data = dt_spendModInput)
         yhatLM <- predict(modLM)
         modLMSum <- summary(modLM)
+        rsq_lm <- f.rsq(dt_spendModInput$exposure, yhatLM) 
+        if (is.na(rsq_lm)) {stop("please check if ",listParam$set_mediaVarName[i]," constains only 0")}
         
         # compare NLS & LM, takes LM if NLS fits worse
-        rsq_nls <- f.rsq(dt_spendModInput$exposure, yhatNLS)
-        rsq_lm <- f.rsq(dt_spendModInput$exposure, yhatLM) #exposure = v  * spend / (k + spend)
-        costSelector[i] <- rsq_nls > rsq_lm
+        costSelector[i] <- if(is.null(rsq_nls)) {return(FALSE)} else {rsq_nls > rsq_lm}
         
         modNLSCollect[[listParam$set_mediaVarName[i]]] <- data.table(channel = listParam$set_mediaVarName[i],
                                                            Vmax = modNLSSum$coefficients[1,1],
@@ -565,8 +575,12 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
     
     modNLSCollect <- rbindlist(modNLSCollect)
     yhatNLSCollect <- rbindlist(yhatCollect)
-    yhatNLSCollect[, ds:= rep(dt_transform$ds, nrow(yhatNLSCollect)/nrow(dt_transform))]
+    yhatNLSCollect[, ds:= rep(dt_transformRollWind$ds, nrow(yhatNLSCollect)/nrow(dt_transformRollWind))]
     
+  } else {
+    modNLSCollect <- NULL
+    plotNLSCollect <- NULL
+    yhatNLSCollect <- NULL
   }
   
   getSpendSum <- listDT$dt_input[, lapply(.SD, sum), .SDcols=listParam$set_mediaSpendName]
@@ -684,6 +698,7 @@ f.featureEngineering <- function(dt_transform = listDT$dt_input, listParam = par
   
   listDT$dt_mod <- dt_transform
   listDT$dt_modRollWind <- dt_transform[listParam$initRollWindStartWhich:listParam$initRollWindEndWhich]
+  listDT$dt_inputRollWind <- dt_inputRollWind
   
   listParam[['modNLSCollect']] <- modNLSCollect
   listParam[['plotNLSCollect']] <- plotNLSCollect  
@@ -709,6 +724,18 @@ f.getHyperNames <- function(adstock = parent.frame()$listParam$adstock, set_medi
     local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
   }
   return(local_name)
+}
+
+################################################
+#### Define Michaelis Menten function
+
+f.micMen <- function(x, Vmax, Km, reverse = F) {
+  if (!reverse) {
+    mm_out <- exposure <- Vmax * x/(Km + x)
+  } else {
+    mm_out <- spend <- x * Km / (Vmax - x)
+  }
+  return(mm_out)
 }
 
 ################################################
@@ -748,6 +775,9 @@ f.adstockWeibull <- function(x, shape , scale) {
   return(list(x_decayed=x_decayed, thetaVecCum = thetaVecCum))
 }
 
+################################################
+#### Define saturation hill function
+
 f.hill <- function(x, alpha, gamma, x_marginal = NULL) {
   
   gammaTrans <- round(quantile(seq(range(x)[1], range(x)[2], length.out = 100), gamma),4)
@@ -760,56 +790,56 @@ f.hill <- function(x, alpha, gamma, x_marginal = NULL) {
   return(x_scurve)
 }
 
-################################################
-#### Define transformation function
-
-f.transformation <- function (x, theta= NULL, shape= NULL, scale= NULL, alpha=NULL, gamma=NULL, alternative = listParam$adstock, stage = 3) {
-  
-  ## step 1: add decay rate
-  
-  if (alternative == "geometric") {
-    x_list <- f.adstockGeometric(x, theta)
-    x_decayed <- x_list$x_decayed
-    
-    if (stage == "thetaVecCum") {
-      #thetaVecCum <- theta
-      #for (t in 2:length(x)) {thetaVecCum[t] <- thetaVecCum[t-1]*theta} # plot(thetaVecCum)
-      thetaVecCum <- x_list$thetaVecCum
-    }
-    
-  } else if (alternative == "weibull") {
-    x_list <- f.adstockWeibull(x, shape, scale)
-    x_decayed <- x_list$x_decayed # plot(x_decayed)
-    
-    if (stage == "thetaVecCum") {
-      thetaVecCum <- x_list$thetaVecCum # plot(thetaVecCum)
-    }
-    
-  } else {
-    print("alternative must be geometric or weibull")
-  }
-  
-  ## step 2: normalize decayed independent variable ############ deprecated
-  #x_normalized <- scale(x_decayed, center =F) # plot(x_normalized) summary(x_normalized)
-  x_normalized <- x_decayed
-  
-  ## step 3: s-curve transformation
-  gammaTrans <- round(quantile(seq(range(x_normalized)[1], range(x_normalized)[2], length.out = 100), gamma),4)
-  x_scurve <-  x_normalized**alpha / (x_normalized**alpha + gammaTrans**alpha) # plot(x_scurve) summary(x_scurve)
-  
-  if (stage == 1) {
-    x_out <- x_decayed
-  } else if (stage == 2) {
-    x_out <- x_normalized
-  } else if (stage ==3) {
-    x_out <- x_scurve
-  } else if (stage == "thetaVecCum") {
-    x_out <- thetaVecCum
-  } else {stop("stage must be 1, 2 or 3, indicating adstock, normalization & scurve stages of transformation") }
-  
-  if (sum(is.nan(x_out))>0) {stop("hyperparameters out of range. theta range: 0-1 (excl.1), shape range: 0-5 (excl.0), alpha range: 0-5 (excl.0),  gamma range: 0-1 (excl.0)")}
-  return(x_out)
-}
+# ################################################
+# #### Define transformation function
+# 
+# f.transformation <- function (x, theta= NULL, shape= NULL, scale= NULL, alpha=NULL, gamma=NULL, alternative = listParam$adstock, stage = 3) {
+#   
+#   ## step 1: add decay rate
+#   
+#   if (alternative == "geometric") {
+#     x_list <- f.adstockGeometric(x, theta)
+#     x_decayed <- x_list$x_decayed
+#     
+#     if (stage == "thetaVecCum") {
+#       #thetaVecCum <- theta
+#       #for (t in 2:length(x)) {thetaVecCum[t] <- thetaVecCum[t-1]*theta} # plot(thetaVecCum)
+#       thetaVecCum <- x_list$thetaVecCum
+#     }
+#     
+#   } else if (alternative == "weibull") {
+#     x_list <- f.adstockWeibull(x, shape, scale)
+#     x_decayed <- x_list$x_decayed # plot(x_decayed)
+#     
+#     if (stage == "thetaVecCum") {
+#       thetaVecCum <- x_list$thetaVecCum # plot(thetaVecCum)
+#     }
+#     
+#   } else {
+#     print("alternative must be geometric or weibull")
+#   }
+#   
+#   ## step 2: normalize decayed independent variable ############ deprecated
+#   #x_normalized <- scale(x_decayed, center =F) # plot(x_normalized) summary(x_normalized)
+#   x_normalized <- x_decayed
+#   
+#   ## step 3: s-curve transformation
+#   gammaTrans <- round(quantile(seq(range(x_normalized)[1], range(x_normalized)[2], length.out = 100), gamma),4)
+#   x_scurve <-  x_normalized**alpha / (x_normalized**alpha + gammaTrans**alpha) # plot(x_scurve) summary(x_scurve)
+#   
+#   if (stage == 1) {
+#     x_out <- x_decayed
+#   } else if (stage == 2) {
+#     x_out <- x_normalized
+#   } else if (stage ==3) {
+#     x_out <- x_scurve
+#   } else if (stage == "thetaVecCum") {
+#     x_out <- thetaVecCum
+#   } else {stop("stage must be 1, 2 or 3, indicating adstock, normalization & scurve stages of transformation") }
+#   
+#   if (sum(is.nan(x_out))>0) {stop("hyperparameters out of range. theta range: 0-1 (excl.1), shape range: 0-5 (excl.0), alpha range: 0-5 (excl.0),  gamma range: 0-1 (excl.0)")}
+#   return(x_out)
+# }
 
 
 ################################################
@@ -1209,7 +1239,7 @@ f.mmm <- function(...
         , .export = c('f.adstockGeometric'
                       , 'f.adstockWeibull'
                       , 'f.hill'
-                      , 'f.transformation'
+                      #, 'f.transformation'
                       , 'f.rsq'
                       , 'f.decomp'
                       , 'f.calibrateLift'
@@ -1546,7 +1576,7 @@ f.mmm <- function(...
 
 f.robyn <- function(listParam = parent.frame()$listParam
                     ,listDT = parent.frame()$listDT
-                    ,plot_folder = getwd()
+                    ,plot_folder = getwd() # plot_folder = "~/Documents/GitHub/plots"
                     ,fixed.out = F
                     ,fixed.hyppar.dt = NULL
                     ,pareto_fronts = 3) {
@@ -1562,6 +1592,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
   }
   
   dt_mod <- copy(listDT$dt_mod)
+  dt_modRollWind <- copy(listDT$dt_modRollWind)
   
   message("Input data has ", nrow(dt_mod), " ", listParam$intervalType, "s in total: "
           , dt_mod[, min(ds)], " to ", dt_mod[, max(ds)])
@@ -1912,7 +1943,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
         setnames(dt_transformSpend, names(dt_transformSpend), c("ds", listParam$set_mediaVarName))
         
         # update non-spend variables
-        dt_transformSpendMod <- copy(dt_transformPlot)
+        dt_transformSpendMod <- dt_transformPlot[listParam$initRollWindStartWhich:listParam$initRollWindEndWhich]
         if (length(listParam$exposureVarName)>0) {
           for (expo in listParam$exposureVarName) {
             sel_nls <- ifelse(listParam$modNLSCollect[channel == expo, rsq_nls>rsq_lm],"nls","lm")
@@ -2017,7 +2048,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
             Km <- listParam$modNLSCollect[channel == chn, Km]
             
             # reverse exposure to spend
-            dt_transformSaturationSpendReverse[, (chn):=.SD * Km / (Vmax - .SD), .SDcols = chn] # exposure to spend, reverse Michaelis Menthen: x = y*Km/(Vmax-y)
+            dt_transformSaturationSpendReverse[, (chn):= f.micMen(x=.SD, Vmax = Vmax, Km = Km, reverse = T), .SDcols = chn] # .SD * Km / (Vmax - .SD) exposure to spend, reverse Michaelis Menthen: x = y*Km/(Vmax-y)
             
           } else if (chn %in% listParam$exposureVarName) {
             coef_lm <- listParam$modNLSCollect[channel == chn, coef_lm]
@@ -2046,7 +2077,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
           if (get_med %in% listParam$set_mediaVarName[listParam$costSelector]) {
             Vmax <- listParam$modNLSCollect[channel == get_med, Vmax]
             Km <- listParam$modNLSCollect[channel == get_med, Km]
-            get_spend_mm <- Vmax * get_spend/(Km + get_spend)
+            get_spend_mm <- f.micMen(x = get_spend, Vmax = Vmax, Km = Km) # Vmax * get_spend/(Km + get_spend)
           } else if (get_med %in% listParam$exposureVarName) {
             coef_lm <- listParam$modNLSCollect[channel == get_med, coef_lm]
             get_spend_mm <- get_spend*coef_lm
@@ -2087,10 +2118,10 @@ f.robyn <- function(listParam = parent.frame()$listParam
         ## plot fitted vs actual
         
         if(!is.null(listParam$set_prophet)) {
-          dt_transformDecomp <- cbind(dt_mod[, c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName), with=F], dt_transformSaturation[, listParam$set_mediaVarName, with=F])
+          dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName), with=F], dt_transformSaturation[, listParam$set_mediaVarName, with=F])
           col_order <- c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName)
         } else {
-          dt_transformDecomp <- cbind(dt_mod[, c("ds", "depVar", listParam$set_baseVarName), with=F], dt_transformSaturation[, listParam$set_mediaVarName, with=F])
+          dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listParam$set_baseVarName), with=F], dt_transformSaturation[, listParam$set_mediaVarName, with=F])
           col_order <- c("ds", "depVar", listParam$set_baseVarName, listParam$set_mediaVarName)
         }
         setcolorder(dt_transformDecomp, neworder = col_order)
@@ -2177,13 +2208,16 @@ f.robyn <- function(listParam = parent.frame()$listParam
   fwrite(mediaVecCollect, paste0(plot_folder, "/", plot_folder_sub,"/", "pareto_media_transform_matrix.csv"))
   fwrite(xDecompVecCollect, paste0(plot_folder, "/", plot_folder_sub,"/", "pareto_alldecomp_matrix.csv"))
   
-  return(list(resultHypParam=resultHypParam[solID %in% allSolutions],
-              xDecompAgg=xDecompAgg[solID %in% allSolutions],
-              mediaVecCollect=mediaVecCollect,
-              xDecompVecCollect=xDecompVecCollect,
-              model_output_collect=model_output_collect,
-              allSolutions = allSolutions,
-              folder_path= paste0(plot_folder, "/", plot_folder_sub,"/")))
+  listOutput <- list(resultHypParam=resultHypParam[solID %in% allSolutions],
+                     xDecompAgg=xDecompAgg[solID %in% allSolutions],
+                     mediaVecCollect=mediaVecCollect,
+                     xDecompVecCollect=xDecompVecCollect,
+                     model_output_collect=model_output_collect,
+                     allSolutions = allSolutions,
+                     folder_path= paste0(plot_folder, "/", plot_folder_sub,"/"))
+  
+  assign("listOutput", listOutput, envir = .GlobalEnv)
+  #return(listOutput)
   
   
 }
@@ -2199,12 +2233,105 @@ f.robyn.fixed <- function(plot_folder = getwd()
     plot_folder <- getwd()
     message("provided plot_folder doesn't exist. Using default plot_folder = getwd(): ", getwd())
   }
-  if (is.null(dt_hyppar_fixed)) {stop("Please provide the table model_output_collect$resultHypParam from previous runs or pareto_hyperparameters.csv with desired model IDs")}
+  if (is.null(dt_hyppar_fixed)) {stop("Please provide the table listOutput$resultHypParam from previous runs or pareto_hyperparameters.csv with desired model IDs")}
   if (nrow(dt_hyppar_fixed)==0) {stop("solID not included in fixed_hyppar_dt")}
   
   ## run f.robyn
-  model_output_collect <- f.robyn(listParam = parent.frame()$listParam
-                                  ,plot_folder = plot_folder
-                                  ,fixed.out = T
-                                  ,fixed.hyppar.dt = dt_hyppar_fixed)
+  f.robyn(listParam = parent.frame()$listParam
+          ,plot_folder = plot_folder
+          ,fixed.out = T
+          ,fixed.hyppar.dt = dt_hyppar_fixed)
+}
+
+
+
+
+f.response <- function(mediaVarName = NULL
+                        , modID = NULL
+                        , Spend = NULL
+                        , listDT = parent.frame()$listDT
+                        , listParam = parent.frame()$listParam
+                        , listOutput = parent.frame()$listOutput
+) {
+  
+  ## get input
+  dt_input = listDT$dt_input
+  set_mediaVarName = listParam$set_mediaVarName
+  set_mediaSpendName = listParam$set_mediaSpendName
+  startRW = listParam$initRollWindStartWhich
+  endRW = listParam$initRollWindEndWhich
+  adstock = listParam$adstock
+  resultHypParam = listOutput$resultHypParam
+  xDecompAgg = listOutput$xDecompAgg
+  allSolutions = listOutput$allSolutions
+  spendExpoMod=listParam$modNLSCollect
+  
+  ## check inputs
+  if (is.null(mediaVarName)) {
+    stop(paste0("mediaVarName must be one of these values: ", paste(set_mediaVarName, collapse = ", ")))
+  } else if ( !(mediaVarName %in% set_mediaVarName) | length(mediaVarName)!=1) {
+    stop(paste0("mediaVarName must be one of these values: ", paste(set_mediaVarName, collapse = ", ")))
+  }
+  
+  mediaVar <- dt_input[, get(mediaVarName)]
+  
+  if (!is.null(Spend)) {
+    if (length(Spend) !=1 | Spend <= 0 | !is.numeric(Spend)) {stop("Spend must be a positive number")} 
+  }
+  
+  
+  
+  ## transform spend to exposure if necessary
+  if (mediaVarName %in% listParam$exposureVarName) {
+    
+    # use non-0 mean spend as marginal level if Spend not provided
+    if (is.null(Spend)) {
+      mediaSpend <- dt_input[startRW:endRW, get(set_mediaSpendName[which(set_mediaVarName == mediaVarName)])]
+      Spend <- mean(mediaSpend[mediaSpend>0])
+      message("Spend not provided. using mean of ", mediaVarName," as marginal levl instead")
+    }
+    
+    # fit spend to exposure
+    nls_select <- spendExpoMod[channel == mediaVarName, rsq_nls > rsq_lm]
+    if (nls_select) {
+      Vmax <- spendExpoMod[channel == mediaVarName, Vmax]
+      Km <- spendExpoMod[channel == mediaVarName, Km]
+      Spend <- f.micMen(x=Spend, Vmax = Vmax, Km = Km, reverse = F) 
+    } else {
+      coef_lm <- spendExpoMod[channel == mediaVarName, coef_lm]
+      Spend <- Spend * coef_lm
+    }
+  } else {
+    
+    # use non-0 mean spend as marginal level if Spend not provided
+    if (is.null(Spend)) {
+      mediaSpend <- dt_input[startRW:endRW, get(mediaVarName)]
+      Spend <- mean(mediaSpend[mediaSpend>0])
+      message("Spend not provided. using mean of ", mediaVarName," as marginal levl instead")
+    }
+  }
+  
+  
+  ## adstocking
+  if (adstock == "geometric") {
+    theta <- resultHypParam[solID == modID, get(paste0(mediaVarName,"_thetas"))]
+    x_list <- f.adstockGeometric(x=mediaVar, theta = theta)
+  } else if (adstock == "weibull") {
+    shape <- resultHypParam[solID == modID, get(paste0(mediaVarName,"_shapes"))]
+    scale <- resultHypParam[solID == modID, get(paste0(mediaVarName,"_scales"))]
+    x_list <- f.adstockWeibull(x=mediaVar, shape = shape, scale = scale)
+  }
+  m_adstocked <- x_list$x_decayed
+  
+  ## saturation
+  m_adstockedRW <- m_adstocked[startRW:endRW]
+  alpha <- resultHypParam[solID == modID, get(paste0(mediaVarName,"_alphas"))]
+  gamma <- resultHypParam[solID == modID, get(paste0(mediaVarName,"_gammas"))]
+  Saturated <- f.hill(x=m_adstockedRW, alpha = alpha, gamma = gamma, x_marginal = Spend)
+  
+  ## decomp
+  coeff <- xDecompAgg[solID == modID & rn == mediaVarName, coef]
+  Response <- Saturated * coeff
+  
+  return(Response)
 }
