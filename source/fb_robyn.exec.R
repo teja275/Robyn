@@ -213,22 +213,26 @@ f.featureEngineering()
 ################################################################
 #### Run models
 
-f.robyn(plot_folder = "~/Documents/GitHub/plots", pareto_fronts = 1) # please set your folder path to save plots. It ends without "/".
+f.robyn(plot_folder = "~/Documents/GitHub/plots", pareto_fronts =1) # please set your folder path to save plots. It ends without "/".
+
+## save selected model
+listOutput$allSolutions
+f.saveInitMod(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData", initModID = "2_8_4")
+# load("/Users/gufengzhou/Documents/GitHub/plots/listInit.RData")
 
 ## reload old models from csv
-
-#dt_hyppar_fixed <- fread("/Users/gufengzhou/Downloads/2021-05-17 10.41/pareto_hyperparameters.csv") # load hyperparameter csv. Provide your own path.
-#model_output_collect <- f.robyn.fixed(plot_folder = "~/Documents/GitHub/plots", dt_hyppar_fixed = dt_hyppar_fixed[solID == "14_24_1"]) # solID must be included in the csv
+# dt_oldModels <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-09 12.54/pareto_hyperparameters.csv") # load hyperparameter csv. Provide your own path.
+# f.robyn.fixed(plot_folder = "~/Documents/GitHub/plots", dt_hyppar_fixed = dt_oldModels, modID = "3_4_6") # solID must be included in the csv
 
 
 ################################################################
 #### get marginal returns
 Spend <- 1000
-Response <- f.response(mediaVarName = "facebook_I", modID = "3_4_1", Spend = Spend) 
+Response <- f.response(mediaVarName = "facebook_I", modID = "1_3_6", Spend = Spend) 
 Response/Spend
 
 Spend1 <- 1001
-Response1 <- f.response(mediaVarName = "facebook_I", modID = "3_4_1", Spend = Spend1) 
+Response1 <- f.response(mediaVarName = "facebook_I", modID = "1_3_6", Spend = Spend1) 
 Response1/Spend1
 
 Response1-Response
@@ -240,7 +244,7 @@ Response1-Response
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
 listOutput$allSolutions
-f.budgetAllocator(modID = "1_6_1" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+f.budgetAllocator(modID = "2_15_4" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
                   ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
                   ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                   #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
@@ -248,3 +252,52 @@ f.budgetAllocator(modID = "1_6_1" # input one of the model IDs in model_output_c
                   ,channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as set_mediaVarName
                   ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
 )
+
+
+
+# 1. replace window , 2. replace hyppar bounces, 3. replace decomp.rssd
+
+rm(list=ls())
+script_path = str_sub(rstudioapi::getActiveDocumentContext()$path, start = 1, end = max(unlist(str_locate_all(rstudioapi::getActiveDocumentContext()$path, "/"))))
+source(paste(script_path, "fb_robyn.func.R", sep=""))
+source(paste(script_path, "fb_robyn.optm.R", sep=""))
+
+# initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData";dataPath = script_path;data_csv_name = "de_simulated_data.csv"; holiday_csv_name = "holidays.csv";cadence = 3; refreshMode = "manual"; refreshIter = 50 ; refreshTrial = 3
+
+f.robyn.refresh(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData"
+                #, refreshModPath = "/Users/gufengzhou/Documents/GitHub/plots/listRefresh.RData"
+                , dataPath = script_path
+                , data_csv_name = "de_simulated_data.csv" # input time series should be daily, weekly or monthly
+                , holiday_csv_name = "holidays.csv"
+                , cadence = 4
+                , refreshMode = "auto"
+                , refreshIter = 50
+                , refreshTrial = 3
+                )
+
+
+
+
+
+
+
+# QA
+load("/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData")
+length(Robyn)
+Robyn$listRefresh4 <- NULL
+save(Robyn, file = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData")
+
+Robyn$listRefresh3$listOutputRefresh$xDecompAgg
+
+
+Robyn$listRefresh1$listParamRefresh$set_rollingWindowStartDate
+Robyn$listRefresh2$listParamRefresh$set_rollingWindowStartDate
+Robyn$listRefresh3$listParamRefresh$set_rollingWindowStartDate
+Robyn$listRefresh4$listParamRefresh$set_rollingWindowStartDate
+
+
+
+
+
+
+
