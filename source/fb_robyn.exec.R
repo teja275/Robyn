@@ -1,11 +1,11 @@
-# 1.functionalise input/ remove global param to enable packaging: f.inputDT, f.inputParam, f.featureEngineering done
+# DONE: 1.functionalise input/ remove global param to enable packaging: f.inputDT, f.inputParam, f.featureEngineering 
 # 2.rolling window width, cadance and output
 # 3.plot enhancement: prophet plot to be replaced, channel detail plot for selecte model f.plotModel (saturation + mROI), correlation matrix for f.inputDT, "reporting" of rolling results
 # 4.add pareto clustering
-# 5.get mROI function? done
+# DONE: 5.get mROI function?
 # 6.organic channels
 # 7.decomp fix for categorical vars?
-# 8.nls fit: try Hill? rewrite trycatch? done
+# DONE: 8.nls fit: try Hill? rewrite trycatch? 
 
 # returning pParFront, change cat() to message() for shiny
 
@@ -29,41 +29,20 @@
 ## RStudio version 1.2.1335
 rm(list=ls()); gc()
 
+################################################################
+#### load data & scripts
+script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
+source(paste(script_path, "fb_robyn.func.R", sep=""))
+source(paste(script_path, "fb_robyn.optm.R", sep=""))
+
 ## Please make sure to install all libraries before rurnning the scripts
-library(data.table) 
-library(stringr) 
-library(lubridate) 
-library(doParallel) 
-library(foreach) 
-library(glmnet) 
-library(car) 
-library(StanHeaders)
-library(prophet)
-library(rstan)
-library(ggplot2)
-library(gridExtra)
-library(grid)
-library(ggpubr)
-library(see)
-library(PerformanceAnalytics)
-library(nloptr)
-library(minpack.lm)
-library(rPref)
-library(reticulate)
-library(rstudioapi)
-library(corrplot)
+f.loadLibrary()
 
 ## please see https://rstudio.github.io/reticulate/index.html for info on installing reticulate
 # conda_create("r-reticulate") # must run this line once
 # conda_install("r-reticulate", "nevergrad", pip=TRUE)  #  must install nevergrad in conda before running Robyn
 # use_python("/Users/gufengzhou/Library/r-miniconda/envs/r-reticulate/bin/python3.6") # in case nevergrad still can't be imported after installation, please locate your python file and run this line
 use_condaenv("r-reticulate") 
-
-################################################################
-#### load data & scripts
-script_path = str_sub(rstudioapi::getActiveDocumentContext()$path, start = 1, end = max(unlist(str_locate_all(rstudioapi::getActiveDocumentContext()$path, "/"))))
-source(paste(script_path, "fb_robyn.func.R", sep=""))
-source(paste(script_path, "fb_robyn.optm.R", sep=""))
 
 f.inputDT(data_csv_name = "de_simulated_data.csv" # input time series should be daily, weekly or monthly
 , holiday_csv_name = "holidays.csv" # when using own holidays, please keep the header c("ds", "holiday", "country", "year")
@@ -117,7 +96,7 @@ f.inputParam(set_dateVarName = "DATE" # date format must be "2020-01-01"
              ,set_iter = 100  # number of allowed iterations per trial. 500 is recommended
              
              ,set_hyperOptimAlgo = "DiscreteOnePlusOne" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
-             ,set_trial = 3 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
+             ,set_trial = 5 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
              ## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
              
              ################################################################
@@ -217,7 +196,7 @@ f.robyn(plot_folder = "~/Documents/GitHub/plots", pareto_fronts =1) # please set
 
 ## save selected model
 listOutput$allSolutions
-f.saveInitMod(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData", initModID = "2_8_4")
+f.saveInitMod(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData", initModID = "2_3_3")
 # load("/Users/gufengzhou/Documents/GitHub/plots/listInit.RData")
 
 ## reload old models from csv
@@ -244,7 +223,7 @@ Response1-Response
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
 listOutput$allSolutions
-f.budgetAllocator(modID = "2_15_4" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+f.budgetAllocator(modID = "2_3_3" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
                   ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
                   ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                   #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
@@ -258,33 +237,29 @@ f.budgetAllocator(modID = "2_15_4" # input one of the model IDs in model_output_
 # 1. replace window , 2. replace hyppar bounces, 3. replace decomp.rssd
 
 rm(list=ls())
-script_path = str_sub(rstudioapi::getActiveDocumentContext()$path, start = 1, end = max(unlist(str_locate_all(rstudioapi::getActiveDocumentContext()$path, "/"))))
+script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
 source(paste(script_path, "fb_robyn.func.R", sep=""))
 source(paste(script_path, "fb_robyn.optm.R", sep=""))
 
-# initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData";dataPath = script_path;data_csv_name = "de_simulated_data.csv"; holiday_csv_name = "holidays.csv";cadence = 3; refreshMode = "manual"; refreshIter = 50 ; refreshTrial = 3
+# initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData";dataPath = script_path;data_csv_name = "de_simulated_data.csv"; holiday_csv_name = "holidays.csv";stepForward = 3; refreshMode = "manual"; refreshIter = 50 ; refreshTrial = 3
 
 f.robyn.refresh(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData"
                 #, refreshModPath = "/Users/gufengzhou/Documents/GitHub/plots/listRefresh.RData"
                 , dataPath = script_path
                 , data_csv_name = "de_simulated_data.csv" # input time series should be daily, weekly or monthly
                 , holiday_csv_name = "holidays.csv"
-                , cadence = 4
-                , refreshMode = "auto"
+                , stepForward = 3
+                , refreshMode = "manual"
                 , refreshIter = 50
                 , refreshTrial = 3
                 )
 
 
 
-
-
-
-
 # QA
 load("/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData")
 length(Robyn)
-Robyn$listRefresh4 <- NULL
+Robyn$listRefresh1 <- NULL
 save(Robyn, file = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData")
 
 Robyn$listRefresh3$listOutputRefresh$xDecompAgg

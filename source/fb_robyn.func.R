@@ -917,7 +917,7 @@ f.decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, refre
   
   xDecompOutAgg <- sapply(xDecompOut[, c("intercept", indepVarName), with =F], function(x) sum(x))
   xDecompOutAggPerc <- xDecompOutAgg / sum(y_hat)
-  xDecompOutAggMeanNon0 <- sapply(xDecompOut[, c("intercept", indepVarName), with =F], function(x) mean(x[x>0]))
+  xDecompOutAggMeanNon0 <- sapply(xDecompOut[, c("intercept", indepVarName), with =F], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x>0])))
   xDecompOutAggMeanNon0[is.nan(xDecompOutAggMeanNon0)] <- 0
   xDecompOutAggMeanNon0Perc <- xDecompOutAggMeanNon0/sum(xDecompOutAggMeanNon0)
   #xDecompOutAggPerc.scaled <- abs(xDecompOutAggPerc)/sum(abs(xDecompOutAggPerc))
@@ -929,7 +929,7 @@ f.decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, refre
   xDecompOutAggRF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =F], function(x) sum(x))
   y_hatRF <- y_hat[refreshAddedStartWhich:refreshAddedEndWhich]
   xDecompOutAggPercRF <- xDecompOutAggRF / sum(y_hatRF)
-  xDecompOutAggMeanNon0RF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =F], function(x) mean(x[x>0]))
+  xDecompOutAggMeanNon0RF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =F], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x>0])))
   xDecompOutAggMeanNon0RF[is.nan(xDecompOutAggMeanNon0RF)] <- 0
   xDecompOutAggMeanNon0PercRF <- xDecompOutAggMeanNon0RF/sum(xDecompOutAggMeanNon0RF)
   
@@ -1580,7 +1580,7 @@ f.mmm <- function(...
   #### Get nevergrad pareto results 
   
   if (fixed.out == F) {
-    pareto_results<-transpose(rbind(as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$value[],4))),
+    pareto_results <- data.table::transpose(rbind(as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$value[],4))),
                                     as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$losses[],4)))))
     if (nrow(set_lift)==0) {
       pareto_results_names<-setnames(pareto_results, old=names(pareto_results), new=c(hyper_bound_local_ng_name,"nrmse", "decomp.rssd") )
@@ -1593,19 +1593,19 @@ f.mmm <- function(...
   } else {
     pareto_results_ordered <- NULL
   }
-  
+
   #####################################
   #### Final result collect
   
   resultCollect <- list(
-    resultHypParam = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$resultHypParam))}))[order(nrmse)],
-    xDecompVec = if (fixed.out==T) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompVec))}))[order(nrmse, ds)]} else {NULL},
-    xDecompAgg =   rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompAgg))}))[order(nrmse)],
-    liftCalibration = if(nrow(set_lift)>0) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$liftCalibration))}))[order(mape, liftMedia, liftStart)]} else {NULL},
-    decompSpendDist = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$decompSpendDist))}))[order(nrmse)],
+    resultHypParam = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$resultHypParam))}))[order(nrmse)]
+    ,xDecompVec = if (fixed.out==T) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompVec))}))[order(nrmse, ds)]} else {NULL}
+    ,xDecompAgg =   rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompAgg))}))[order(nrmse)]
+    ,liftCalibration = if(nrow(set_lift)>0) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$liftCalibration))}))[order(mape, liftMedia, liftStart)]} else {NULL}
+    ,decompSpendDist = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$decompSpendDist))}))[order(nrmse)]
     #mape = unlist(lapply(doparCollect, function(x) x$mape)),
     #iterRS = unlist(lapply(doparCollect, function(x) x$iterRS)),
-    paretoFront= as.data.table(pareto_results_ordered)
+    ,paretoFront= as.data.table(pareto_results_ordered)
     #,cvmod = lapply(doparCollect, function(x) x$cvmod)
   )
   resultCollect$iter <- length(resultCollect$mape)
@@ -1654,7 +1654,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
           , dt_mod[, min(ds)], " to ", dt_mod[, max(ds)])
   message(ifelse(!refresh, "Initial", "Refresh")," model is built on rolling window of ", listParam$rollingWindowLength, " ", listParam$intervalType,"s: "
           , listParam$set_rollingWindowStartDate, " to ", listParam$set_rollingWindowEndDat)
-  if (refresh) {message("Refresh cadence: ", listParam$cadence, " ", listParam$intervalType)}
+  if (refresh) {message("Rolling window moving forward: ", listParam$stepForward, " ", listParam$intervalType)}
   
   
   #####################################
@@ -2141,7 +2141,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
       dt_scurvePlot <- dt_scurvePlot[spend>=0] # remove outlier introduced by MM nls fitting
       
       
-      dt_scurvePlotMean <- dt_transformSpend[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich, !"ds"][, lapply(.SD, function(x) mean(x[x>0])), .SDcols = listParam$set_mediaVarName]
+      dt_scurvePlotMean <- dt_transformSpend[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich, !"ds"][, lapply(.SD, function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x>0])) ), .SDcols = listParam$set_mediaVarName]
       dt_scurvePlotMean <- melt.data.table(dt_scurvePlotMean, measure.vars = listParam$set_mediaVarName, value.name = "mean_spend", variable.name = "channel")
       dt_scurvePlotMean[, ':='(mean_spend_scaled=0, mean_response=0, next_unit_response=0)]
       
@@ -2271,8 +2271,8 @@ f.robyn <- function(listParam = parent.frame()$listParam
   setkey(meanResponseCollect, solID, rn)
   xDecompAgg <- merge(xDecompAgg,meanResponseCollect[, .(rn, solID, mean_response, next_unit_response)], all.x=TRUE)
   
-  
-  cat("\nTotal time: ",difftime(Sys.time(),t0, units = "mins"), "mins\n")
+  totalTime <- difftime(Sys.time(),t0, units = "mins")
+  cat("\nTotal time: ",totalTime, "mins\n")
   
   #####################################
   #### Collect results for output
@@ -2290,7 +2290,8 @@ f.robyn <- function(listParam = parent.frame()$listParam
                      xDecompVecCollect=xDecompVecCollect,
                      model_output_collect=model_output_collect,
                      allSolutions = allSolutions,
-                     folder_path= paste0(plot_folder, "/", plot_folder_sub,"/"))
+                     totalTime = totalTime,
+                     plot_folder= paste0(plot_folder, "/", plot_folder_sub,"/"))
   
   if (!refresh) {
     assign("listOutput", listOutput, envir = .GlobalEnv)
@@ -2464,9 +2465,10 @@ f.saveInitMod <- function(initModPath
 
 f.robyn.refresh <- function(initModPath
                             ,dataPath = script_path
+                            ,plotPath = "~/Documents/GitHub/plots"
                             ,data_csv_name
                             ,holiday_csv_name
-                            ,cadence = 4
+                            ,stepForward = 4
                             ,refreshMode = "manual" # "auto", "manual"
                             ,refreshIter = 50
                             ,refreshTrial = 3
@@ -2475,11 +2477,12 @@ f.robyn.refresh <- function(initModPath
                             # ,listOutputInit = parent.frame()$listOutputInit
 ) {
   
+  #dataPath <- substr(initModPath, start=1, stop=max(gregexpr("/",initModPath)[[1]]))
   refreshControl <- T
   while (refreshControl) {
   
   ## load inital model
-  if(exists("listOutputRefresh")) {rm(listOutputRefresh, listParamRefresh, listDTRefresh)}
+  #if(exists("listOutputRefresh")) {rm(listOutputRefresh, listParamRefresh, listDTRefresh)}
   load(initModPath) # length(Robyn)
   
   ## count refresh
@@ -2506,7 +2509,7 @@ f.robyn.refresh <- function(initModPath
   
   refreshCounter <- refreshCounter+1
   listParamRefresh$refreshCounter <- refreshCounter
-  listParamRefresh$cadence <- cadence
+  listParamRefresh$stepForward <- stepForward
   
 
   ## load refresh data
@@ -2521,8 +2524,8 @@ f.robyn.refresh <- function(initModPath
   
   ## refresh rolling window
   totalDates <- as.Date(dt_input[, get(listParamRefresh$set_dateVarName)])
-  refreshStart <- as.Date(listParamRefresh$set_rollingWindowStartDate) + listParamRefresh$dayInterval * cadence
-  refreshEnd <- as.Date(listParamRefresh$set_rollingWindowEndDate) + listParamRefresh$dayInterval * cadence
+  refreshStart <- as.Date(listParamRefresh$set_rollingWindowStartDate) + listParamRefresh$dayInterval * stepForward
+  refreshEnd <- as.Date(listParamRefresh$set_rollingWindowEndDate) + listParamRefresh$dayInterval * stepForward
   listParamRefresh$refreshAddedStart <- as.Date(listParamRefresh$set_rollingWindowEndDate) + listParamRefresh$dayInterval 
   listParamRefresh$set_rollingWindowStartDate <- refreshStart
   listParamRefresh$set_rollingWindowEndDate <- refreshEnd
@@ -2540,8 +2543,8 @@ f.robyn.refresh <- function(initModPath
     message("###### refreshing model nr.",refreshCounter, " in ", refreshMode, " mode ... ######")
     refreshControl <- F
   } else {
-    refreshLooper <- floor(as.numeric(difftime(max(totalDates), refreshEnd, units = "days")) / listParamRefresh$dayInterval / cadence)
-    message("###### refreshing model nr.",refreshCounter, " in ",refreshMode," mode. ",refreshLooper-1," more to go ... ######")
+    refreshLooper <- floor(as.numeric(difftime(max(totalDates), refreshEnd, units = "days")) / listParamRefresh$dayInterval / stepForward)
+    message("###### refreshing model nr.",refreshCounter, " in ",refreshMode," mode. ",refreshLooper," more to go ... ######")
   }
   
   #### update refresh model parameters
@@ -2550,7 +2553,7 @@ f.robyn.refresh <- function(initModPath
   ## refresh hyperparameter bounds
   initBounds <- Robyn$listInit$listParam$set_hyperBoundLocal
   initBoundsDis <- sapply(initBounds, function(x) return(x[2]-x[1]))
-  newBoundsFreedom <- cadence/listParamRefresh$rollingWindowLength
+  newBoundsFreedom <- stepForward/listParamRefresh$rollingWindowLength
   
   set_hyperBoundLocal <- listParamRefresh$set_hyperBoundLocal
   hypNames <- names(set_hyperBoundLocal)
@@ -2579,7 +2582,7 @@ f.robyn.refresh <- function(initModPath
   ## refresh model with adjusted decomp.rssd
   f.robyn(listParam = listParamRefresh
           ,listDT = listDTRefresh
-          ,plot_folder = "~/Documents/GitHub/plots"
+          ,plot_folder = plotPath
           ,pareto_fronts =1
           ,refresh = T)
   
@@ -2590,25 +2593,71 @@ f.robyn.refresh <- function(initModPath
   listParamRefresh$selectID <- selectID
   message("\nSelected model ID: ", selectID, " for refresh model nr.",refreshCounter," based on the smallest combined error of nrmse & decomp.rssd")
   
-  listOutputRefresh$resultHypParam <- listOutputRefresh$resultHypParam[, bestModRF:= solID == selectID]
-  listOutputRefresh$xDecompAgg <- listOutputRefresh$xDecompAgg[, bestModRF:= solID == selectID]
-  listOutputRefresh$mediaVecCollect <- listOutputRefresh$mediaVecCollect[, bestModRF:= solID == selectID]
-  listOutputRefresh$xDecompVecCollect <- listOutputRefresh$xDecompVecCollect[, bestModRF:= solID == selectID]
+  listOutputRefresh$resultHypParam[, bestModRF:= solID == selectID]
+  listOutputRefresh$xDecompAgg[, bestModRF:= solID == selectID]
+  listOutputRefresh$mediaVecCollect[, bestModRF:= solID == selectID]
+  listOutputRefresh$xDecompVecCollect[, bestModRF:= solID == selectID]
   
-  listHolder<- list(listDTRefresh=listDTRefresh, listParamRefresh=listParamRefresh, listOutputRefresh=listOutputRefresh)
+  
+  #### result collect & save
+  if (refreshCounter==1) {
+    listOutputPrev$resultHypParam[, ':='(error_dis = sqrt(nrmse^2 + decomp.rssd^2), bestModRF = TRUE)]
+    listOutputPrev$xDecompAgg[, bestModRF:=TRUE]
+    listOutputPrev$mediaVecCollect[, bestModRF:=TRUE]
+    listOutputPrev$xDecompVecCollect[, bestModRF:=TRUE]
+  }
+
+  resultHypParamReport <- rbind(listOutputPrev$resultHypParam[bestModRF==T, refreshStatus:=refreshCounter-1]
+                                ,listOutputRefresh$resultHypParam[bestModRF==T, refreshStatus:=refreshCounter])
+  xDecompAggReport <- rbind(listOutputPrev$xDecompAgg[bestModRF==T, refreshStatus:=refreshCounter-1]
+                            ,listOutputRefresh$xDecompAgg[bestModRF==T, refreshStatus:=refreshCounter])
+  mediaVecCollectReport <- rbind(listOutputPrev$mediaVecCollect[bestModRF==T, refreshStatus:= refreshCounter-1]
+                                 ,listOutputRefresh$mediaVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd
+                                                                    , refreshStatus:=refreshCounter])
+  mediaVecCollectReport <- mediaVecCollectReport[order(type, ds, refreshStatus)]
+  xDecompVecReport <- rbind(listOutputPrev$xDecompVecCollect[bestModRF==T, refreshStatus:=refreshCounter-1]
+                            ,listOutputRefresh$xDecompVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd
+                                                                 , refreshStatus:=refreshCounter])
+  
+  fwrite(resultHypParamReport, paste0(listOutputRefresh$plot_folder, "report_hyperparameters.csv"))
+  fwrite(xDecompAggReport, paste0(listOutputRefresh$plot_folder, "report_aggregated.csv"))
+  fwrite(mediaVecCollectReport, paste0(listOutputRefresh$plot_folder, "report_media_transform_matrix.csv"))
+  fwrite(xDecompVecReport, paste0(listOutputRefresh$plot_folder, "report_alldecomp_matrix.csv"))
+  
+  listReport <- list(resultHypParamReport=resultHypParamReport
+                     ,xDecompAggReport=xDecompAggReport
+                     ,mediaVecCollectReport=mediaVecCollectReport
+                     ,xDecompVecReport=xDecompVecReport)
+  assign("listReport", listReport)
+  
+  listHolder<- list(listDTRefresh=listDTRefresh
+                    ,listParamRefresh=listParamRefresh
+                    ,listOutputRefresh=listOutputRefresh
+                    ,listReport=listReport)
+  
+  
   listNameUpdate <- paste0("listRefresh",refreshCounter)
-  
   assign(listNameUpdate, listHolder)
   Robyn[[listNameUpdate]] <- listHolder
   
   save(Robyn, file = initModPath)
   
-  if(refreshLooper==1) {
+  if(refreshLooper==0) {
     refreshControl <- F
     message("reached maximum available date. no further refresh possible")}
   }
   
-  
   #save(listDTRefresh, listDTRefresh, file = initModPath)
 }
+
+f.loadLibrary <- function() {
+  
+  libsNeeded <- c("data.table","stringr","lubridate","doParallel","foreach","glmnet","car","StanHeaders","prophet","rstan","ggplot2","gridExtra","grid","ggpubr","see","PerformanceAnalytics","nloptr","minpack.lm","rPref","reticulate","rstudioapi","corrplot")
+  cat(paste0("Loading required libraries: ", paste(libsNeeded, collapse = ", "), "\n"))
+  libsInstalled <- rownames(installed.packages())
+  for (l in libsNeeded) {
+    if (require(l, character.only = T)) {} else {install.packages(l)}
+  }
+}
+
 
