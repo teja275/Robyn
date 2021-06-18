@@ -1,5 +1,5 @@
 # DONE: 1.functionalise input/ remove global param to enable packaging: f.inputDT, f.inputParam, f.featureEngineering 
-# 2.rolling window width, cadance and output
+# DONE: 2.rolling window : # a. replace window , b. replace hyppar bounces, c. replace decomp.rssd
 # 3.plot enhancement: prophet plot to be replaced, channel detail plot for selecte model f.plotModel (saturation + mROI), correlation matrix for f.inputDT, "reporting" of rolling results
 # 4.add pareto clustering
 # DONE: 5.get mROI function?
@@ -88,7 +88,7 @@ f.inputParam(set_dateVarName = "DATE" # date format must be "2020-01-01"
              
              ## set rolling window start (only works for whole dataset for now)
              #,set_rollingWindowStartDate = "2019-04-29"
-             ,set_rollingWindowStartDate = "2016-11-23" 
+             ,set_rollingWindowStartDate = "2016-11-23"
              ,set_rollingWindowEndDate = "2018-08-22"
              
              ## set model core features
@@ -149,30 +149,6 @@ f.inputParam(set_dateVarName = "DATE" # date format must be "2020-01-01"
                #,search_clicks_P_scales = c(0, 0.1)
              )
              
-             # ,set_hyperBoundLocal = list(
-             #   
-             #   affiliates_S_alphas = c(0.5, 3),
-             #   affiliates_S_gammas = c(0.3, 1),
-             #   affiliates_S_thetas = c(0, 0.3),
-             #   
-             #   sem_non_brand_I_alphas = c(0.5, 3) # example bounds for alpha
-             #   ,sem_non_brand_I_gammas = c(0.3, 1) # example bounds for gamma
-             #   ,sem_non_brand_I_thetas = c(0, 0.3) # example bounds for theta
-             #   
-             #   ,rmk_I_alphas = c(0.5, 3)
-             #   ,rmk_I_gammas = c(0.3, 1)
-             #   ,rmk_I_thetas = c(0, 0.3)
-             #   
-             #   ,sho_I_alphas = c(0.5, 3)
-             #   ,sho_I_gammas = c(0.3, 1)
-             #   ,sho_I_thetas = c(0, 0.3)
-             #   
-             #   ,fb_I_alphas = c(0.5, 3)
-             #   ,fb_I_gammas = c(0.3, 1)
-             #   ,fb_I_thetas = c(0, 0.3)
-             #   
-             # )
-             
              # ,set_lift = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
              #                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
              #                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
@@ -194,9 +170,11 @@ f.featureEngineering()
 
 f.robyn(plot_folder = "~/Documents/GitHub/plots", pareto_fronts =1) # please set your folder path to save plots. It ends without "/".
 
+
+######################### NOTE: must run f.saveInitMod to select and save ONE model first, before refreshing below
 ## save selected model
 listOutput$allSolutions
-f.saveInitMod(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData", initModID = "2_3_3")
+f.saveInitMod(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData", initModID = "5_6_5")
 # load("/Users/gufengzhou/Documents/GitHub/plots/listInit.RData")
 
 ## reload old models from csv
@@ -205,25 +183,13 @@ f.saveInitMod(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RDat
 
 
 ################################################################
-#### get marginal returns
-Spend <- 1000
-Response <- f.response(mediaVarName = "facebook_I", modID = "1_3_6", Spend = Spend) 
-Response/Spend
-
-Spend1 <- 1001
-Response1 <- f.response(mediaVarName = "facebook_I", modID = "1_3_6", Spend = Spend1) 
-Response1/Spend1
-
-Response1-Response
-
-################################################################
 #### Budget Allocator - Beta
 
 ## Budget allocator result requires further validation. Please use this result with caution.
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
 listOutput$allSolutions
-f.budgetAllocator(modID = "2_3_3" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+f.budgetAllocator(modID = "5_6_5" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
                   ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
                   ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                   #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
@@ -233,42 +199,51 @@ f.budgetAllocator(modID = "2_3_3" # input one of the model IDs in model_output_c
 )
 
 
+################################################################
+#### Model refresh - Alpha
 
-# 1. replace window , 2. replace hyppar bounces, 3. replace decomp.rssd
+# rm(list=ls())
+# script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
+# source(paste(script_path, "fb_robyn.func.R", sep=""))
+# source(paste(script_path, "fb_robyn.optm.R", sep=""))
 
-rm(list=ls())
-script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
-source(paste(script_path, "fb_robyn.func.R", sep=""))
-source(paste(script_path, "fb_robyn.optm.R", sep=""))
+# initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData";dataPath = script_path;data_csv_name = "de_simulated_data.csv"; holiday_csv_name = "holidays.csv";stepForward = 3; refreshMode = "manual"; refreshIter = 50 ; refreshTrial = 3; plotPath = "~/Documents/GitHub/plots"
 
-# initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData";dataPath = script_path;data_csv_name = "de_simulated_data.csv"; holiday_csv_name = "holidays.csv";stepForward = 3; refreshMode = "manual"; refreshIter = 50 ; refreshTrial = 3
-
-f.robyn.refresh(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData"
-                #, refreshModPath = "/Users/gufengzhou/Documents/GitHub/plots/listRefresh.RData"
+f.robyn.refresh(initModPath = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData" # the location of your Robyn.RData object
                 , dataPath = script_path
-                , data_csv_name = "de_simulated_data.csv" # input time series should be daily, weekly or monthly
-                , holiday_csv_name = "holidays.csv"
-                , stepForward = 3
-                , refreshMode = "manual"
-                , refreshIter = 50
-                , refreshTrial = 3
+                , data_csv_name = "de_simulated_data.csv" 
+                , holiday_csv_name = "holidays.csv" 
+                , stepForward = 5 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
+                , refreshMode = "manual" # "auto" means the refresh function will move forward until no more data available
+                , refreshIter = 50 # iteration for refresh
+                , refreshTrial = 2 # trial for refresh
                 )
+
+######## Please check plot output folders. The following 4 reporting CSVs are new and accummulated result with all previous refreshes ...
+######## ... that will be the data for reporting plots (plots not available yet)
+######## report_aggregated.csv, report_alldecomp_matrix.csv, report_hyperparameters.csv, report_media_transform_matrix.csv
+
 
 
 
 # QA
-load("/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData")
-length(Robyn)
-Robyn$listRefresh1 <- NULL
-save(Robyn, file = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData")
-
-Robyn$listRefresh3$listOutputRefresh$xDecompAgg
+# load("/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData")
+# length(Robyn);names(Robyn)
+# Robyn$listRefresh2 <- NULL
+# save(Robyn, file = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData")
 
 
-Robyn$listRefresh1$listParamRefresh$set_rollingWindowStartDate
-Robyn$listRefresh2$listParamRefresh$set_rollingWindowStartDate
-Robyn$listRefresh3$listParamRefresh$set_rollingWindowStartDate
-Robyn$listRefresh4$listParamRefresh$set_rollingWindowStartDate
+################################################################
+#### get marginal returns
+# Spend <- 1000
+# Response <- f.response(mediaVarName = "facebook_I", modID = "1_3_6", Spend = Spend) 
+# Response/Spend
+# 
+# Spend1 <- 1001
+# Response1 <- f.response(mediaVarName = "facebook_I", modID = "1_3_6", Spend = Spend1) 
+# Response1/Spend1
+# 
+# Response1-Response
 
 
 

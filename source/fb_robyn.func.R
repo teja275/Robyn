@@ -2484,10 +2484,14 @@ f.robyn.refresh <- function(initModPath
   ## load inital model
   #if(exists("listOutputRefresh")) {rm(listOutputRefresh, listParamRefresh, listDTRefresh)}
   load(initModPath) # length(Robyn)
-  
+    
   ## count refresh
-  refreshCounter <- length(Robyn)-1
-  if(refreshCounter==0) {
+  refreshCounter <- length(Robyn)
+  objectCheck <- if (refreshCounter==1) {c("listInit")} else {c("listInit", paste0("listRefresh", 1:(refreshCounter-1)))} 
+  if (!all(objectCheck %in% names(Robyn))) {stop("Saved Robyn object is corrupted. It should contain ", paste(objectCheck, collapse = ",", ". Please rerun model."))}
+  
+  ## get previous data
+  if(refreshCounter==1) {
     listName <- "listInit"
     assign("listParamRefresh", Robyn[[listName]][["listParam"]])
     assign("listOutputPrev", Robyn[[listName]][["listOutput"]])
@@ -2495,9 +2499,10 @@ f.robyn.refresh <- function(initModPath
     if (length(unique(Robyn$listInit$listOutput$resultHypParam$solID))>1) {stop("Run f.saveInitMod first to select one initial model")}
     
   } else {
-    listName <- paste0("listRefresh",refreshCounter)
+    listName <- paste0("listRefresh",refreshCounter-1)
     assign("listParamRefresh", Robyn[[listName]][["listParamRefresh"]])
     assign("listOutputPrev", Robyn[[listName]][["listOutputRefresh"]])
+    assign("listReportPrev", Robyn[[listName]][["listReport"]])
     message(paste0("\n###### refresh model nr.",refreshCounter," loaded ... ######"))
     
     ## model selection from previous build
@@ -2507,7 +2512,7 @@ f.robyn.refresh <- function(initModPath
     listOutputPrev$xDecompVecCollect <- listOutputPrev$xDecompVecCollect[bestModRF==T]
   }
   
-  refreshCounter <- refreshCounter+1
+  #refreshCounter <- refreshCounter+1
   listParamRefresh$refreshCounter <- refreshCounter
   listParamRefresh$stepForward <- stepForward
   
@@ -2601,35 +2606,73 @@ f.robyn.refresh <- function(initModPath
   
   #### result collect & save
   if (refreshCounter==1) {
-    listOutputPrev$resultHypParam[, ':='(error_dis = sqrt(nrmse^2 + decomp.rssd^2), bestModRF = TRUE)]
-    listOutputPrev$xDecompAgg[, bestModRF:=TRUE]
-    listOutputPrev$mediaVecCollect[, bestModRF:=TRUE]
-    listOutputPrev$xDecompVecCollect[, bestModRF:=TRUE]
+    listOutputPrev$resultHypParam[, ':='(error_dis = sqrt(nrmse^2 + decomp.rssd^2), bestModRF = TRUE, refreshStatus=refreshCounter-1)]
+    listOutputPrev$xDecompAgg[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
+    listOutputPrev$mediaVecCollect[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
+    listOutputPrev$xDecompVecCollect[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
+    
+    
+    resultHypParamReport <- rbind(listOutputPrev$resultHypParam[bestModRF==T]
+                                  ,listOutputRefresh$resultHypParam[bestModRF==T][, refreshStatus:=refreshCounter])
+    xDecompAggReport <- rbind(listOutputPrev$xDecompAgg[bestModRF==T]
+                              ,listOutputRefresh$xDecompAgg[bestModRF==T][, refreshStatus:=refreshCounter])
+    mediaVecReport <- rbind(listOutputPrev$mediaVecCollect[bestModRF==T & ds>=(refreshStart- listParamRefresh$dayInterval * stepForward) & ds <= (refreshEnd- listParamRefresh$dayInterval * stepForward)]
+                                   ,listOutputRefresh$mediaVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+    mediaVecReport <- mediaVecReport[order(type, ds, refreshStatus)]
+    xDecompVecReport <- rbind(listOutputPrev$xDecompVecCollect[bestModRF==T]
+                              ,listOutputRefresh$xDecompVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+  } else {
+    
+    resultHypParamReport <- rbind(listReportPrev$resultHypParamReport, listOutputRefresh$resultHypParam[bestModRF==T][, refreshStatus:=refreshCounter])
+    xDecompAggReport <- rbind(listReportPrev$xDecompAggReport, listOutputRefresh$xDecompAgg[bestModRF==T][, refreshStatus:=refreshCounter])
+    mediaVecReport <- rbind(listReportPrev$mediaVecReport
+                                   , listOutputRefresh$mediaVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+    mediaVecReport <- mediaVecReport[order(type, ds, refreshStatus)]
+    xDecompVecReport <- rbind(listReportPrev$xDecompVecReport
+                              ,listOutputRefresh$xDecompVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
   }
-
-  resultHypParamReport <- rbind(listOutputPrev$resultHypParam[bestModRF==T, refreshStatus:=refreshCounter-1]
-                                ,listOutputRefresh$resultHypParam[bestModRF==T, refreshStatus:=refreshCounter])
-  xDecompAggReport <- rbind(listOutputPrev$xDecompAgg[bestModRF==T, refreshStatus:=refreshCounter-1]
-                            ,listOutputRefresh$xDecompAgg[bestModRF==T, refreshStatus:=refreshCounter])
-  mediaVecCollectReport <- rbind(listOutputPrev$mediaVecCollect[bestModRF==T, refreshStatus:= refreshCounter-1]
-                                 ,listOutputRefresh$mediaVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd
-                                                                    , refreshStatus:=refreshCounter])
-  mediaVecCollectReport <- mediaVecCollectReport[order(type, ds, refreshStatus)]
-  xDecompVecReport <- rbind(listOutputPrev$xDecompVecCollect[bestModRF==T, refreshStatus:=refreshCounter-1]
-                            ,listOutputRefresh$xDecompVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd
-                                                                 , refreshStatus:=refreshCounter])
   
   fwrite(resultHypParamReport, paste0(listOutputRefresh$plot_folder, "report_hyperparameters.csv"))
   fwrite(xDecompAggReport, paste0(listOutputRefresh$plot_folder, "report_aggregated.csv"))
-  fwrite(mediaVecCollectReport, paste0(listOutputRefresh$plot_folder, "report_media_transform_matrix.csv"))
+  fwrite(mediaVecReport, paste0(listOutputRefresh$plot_folder, "report_media_transform_matrix.csv"))
   fwrite(xDecompVecReport, paste0(listOutputRefresh$plot_folder, "report_alldecomp_matrix.csv"))
+  
+  
+  #### reporting plots
+  
+  getRefreshDates <- unique(xDecompVecReport$refreshStatus)
+  for (d in 1:length(getRefreshDates)) {
+    getRefreshDates[d] <- max(which(getRefreshDates[d]==xDecompVecReport$refreshStatus))+1
+  }
+  getRefreshDates <- getRefreshDates[1:(length(getRefreshDates)-1)]
+  getRefreshDates <- xDecompVecReport$ds[getRefreshDates]
+  
+  # xDecompVecReport <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-18 11.51 rf2/report_alldecomp_matrix.csv")
+  
+  xDecompVecReportMelted <- melt.data.table(xDecompVecReport[, .(ds, actual=depVar, predicted=depVarHat)] , id.vars = "ds")
+  pFitRF <- ggplot(xDecompVecReportMelted, aes(x = ds, y = value, color = variable)) +
+    geom_line()+
+    theme(legend.position = c(0.9, 0.9)) +
+    geom_vline(xintercept = getRefreshDates, linetype="dotted") + 
+    labs(title="Model refresh: actual vs. predicted response"
+         ,subtitle = paste0("Assembled rsq: ", round(f.rsq(true=xDecompVecReport$depVar, predicted=xDecompVecReport$depVarHat),2)
+                            ,"\nRefresh dates: ", paste(getRefreshDates, collapse = ", "))
+         ,x="date" ,y="response")
+  print(pFitRF)
+
+  ggsave(filename=paste0(listOutputRefresh$plot_folder,"report_actual_fitted.png")
+         , plot = pFitRF
+         , dpi = 600, width = 9, height = 6)
+  
+  
+  #### save result objects
   
   listReport <- list(resultHypParamReport=resultHypParamReport
                      ,xDecompAggReport=xDecompAggReport
-                     ,mediaVecCollectReport=mediaVecCollectReport
+                     ,mediaVecReport=mediaVecReport
                      ,xDecompVecReport=xDecompVecReport)
   assign("listReport", listReport)
-  
+
   listHolder<- list(listDTRefresh=listDTRefresh
                     ,listParamRefresh=listParamRefresh
                     ,listOutputRefresh=listOutputRefresh
