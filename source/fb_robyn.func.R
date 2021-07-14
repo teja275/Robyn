@@ -12,6 +12,8 @@ f.inputDT <- function(data_csv_name = "de_simulated_data.csv"
                       ,csv_path = script_path
                       ,plot_corrmat = F
                       ,refresh = F
+                      ,xDecompAggPrev = NULL
+                      
 ) {
   
   dt_input <- fread(paste0(csv_path, data_csv_name))
@@ -22,7 +24,7 @@ f.inputDT <- function(data_csv_name = "de_simulated_data.csv"
     corrplot(cor_mat, type = "upper", order = "hclust", sig.level = 0.05, insig = "blank",tl.cex = 0.8)
   }
   
-  listDT <- list(dt_input=dt_input, dt_holidays=dt_holidays, dt_mod=NULL, dt_modRollWind=NULL)
+  listDT <- list(dt_input=dt_input, dt_holidays=dt_holidays, dt_mod=NULL, dt_modRollWind=NULL, xDecompAggPrev = xDecompAggPrev)
   if (!refresh) {
     assign("listDT", listDT, envir = .GlobalEnv)
   } else {
@@ -147,7 +149,11 @@ f.inputParam <- function(listDT = parent.frame()$listDT
     stop("Provided set_mediaSpendName is not included in input data")
   } else if (spendVarCount != mediaVarCount) {
     stop("set_mediaSpendName must have same length as set_mediaVarName.")
-  } 
+  } else if (any(listDT$dt_input[, unique(c(set_mediaVarName, set_mediaSpendName)), with=F]<0)) {
+    check_media_names <- unique(c(set_mediaVarName, set_mediaSpendName))
+    check_media_val <- sapply(listDT$dt_input[, check_media_names, with=F], function(X) { any(X <0) })
+    stop( paste(names(check_media_val)[check_media_val], collapse = ", "), " contains negative values. Media must be >=0")
+  }
   
   exposureVarName <- set_mediaVarName[!(set_mediaVarName==set_mediaSpendName)]
   
@@ -632,8 +638,8 @@ f.featureEngineering <- function(listDT = parent.frame()$listDT
       
     } else if (listParam$intervalType == "week") {
       
-      weekStartInput <- weekdays(dt_transform[1, ds])
-      weekStartMonday <- if(weekStartInput=="Monday") {TRUE} else if (weekStartInput=="Sunday") {FALSE} else {stop("week start has to be Monday or Sunday")}
+      weekStartInput <- wday(dt_transform[1, ds])
+      weekStartMonday <- if(weekStartInput==2) {TRUE} else if (weekStartInput==1) {FALSE} else {stop("week start has to be Monday or Sunday")}
       listDT$dt_holidays[, dsWeekStart:= cut(as.Date(ds), breaks = listParam$intervalType, start.on.monday = weekStartMonday)]
       holidays <- listDT$dt_holidays[, .(ds=dsWeekStart, holiday, country, year)]
       holidays <- holidays[, lapply(.SD, paste0, collapse="#"), by = c("ds", "country", "year"), .SDcols = "holiday"]
@@ -1072,9 +1078,9 @@ f.mmm <- function(...
                   , listDT = parent.frame()$listDT
                   , set_iter = parent.frame()$listParam$set_iter
                   , lambda.n = 100
-                  , fixed.out = F
+                  , fixed.out = FALSE
                   , fixed.lambda = NULL
-                  , refresh = F
+                  , refresh = FALSE
 ) {
   
   ################################################
@@ -1082,8 +1088,8 @@ f.mmm <- function(...
   
   hypParamSamName <- f.getHyperNames()
   
-  if (fixed.out==F) {
-    input.collect <- unlist(list(...), recursive = F) # input.collect <- listParam$set_hyperBoundLocal
+  if (fixed.out==FALSE) {
+    input.collect <- unlist(list(...), recursive = FALSE) # input.collect <- listParam$set_hyperBoundLocal
     
     # sort hyperparameter list by name
     hyper_bound_local <- list()
@@ -1097,7 +1103,7 @@ f.mmm <- function(...
     hyper_bound_local_ng <- hyper_bound_local[bounds_ng]
     hyper_bound_local_ng_name <- names(hyper_bound_local_ng)
     num_hyppar_ng <- length(hyper_bound_local_ng)
-    if (num_hyppar_ng == 0) {fixed.out <- T}
+    if (num_hyppar_ng == 0) {fixed.out <- TRUE}
     
     # get fixed hyperparameters
     bounds_fixed <- which(sapply(hyper_bound_local, length)==1)
@@ -1131,6 +1137,7 @@ f.mmm <- function(...
   
   ## get environment for parallel backend
   dt_mod <- copy(listDT$dt_mod)
+  xDecompAggPrev <- listDT$xDecompAggPrev
   rollingWindowStartWhich <- listParam$rollingWindowStartWhich
   rollingWindowEndWhich <- listParam$rollingWindowEndWhich
   refreshAddedStart <- listParam$refreshAddedStart
@@ -1458,7 +1465,10 @@ f.mmm <- function(...
         if (!refresh) {
           decomp.rssd <- dt_decompSpendDist[, sqrt(sum((effect_share-spend_share)^2))]
         } else {
-          decomp.rssd <- dt_decompSpendDist[, sqrt(sum((effect_share_refresh-spend_share_refresh)^2))]
+          dt_decompRF <- decompCollect$xDecompAgg[, .(rn, xDecompPercRF)][xDecompAggPrev[, .(rn, xDecompPercRFPrev=xDecompPercRF)], on = "rn"]
+          decomp.rssd.nonmedia <- dt_decompRF[!(rn %in% set_mediaVarName), sqrt(sum((xDecompPercRF - xDecompPercRFPrev)^2))]
+          decomp.rssd.media <- dt_decompSpendDist[, sqrt(sum((effect_share_refresh-spend_share_refresh)^2))]
+          decomp.rssd <- decomp.rssd.media + decomp.rssd.nonmedia
         }
         
         if (is.nan(decomp.rssd)) {
@@ -1545,9 +1555,9 @@ f.mmm <- function(...
       } # end dopar
       ## end parallel
       
-      nrmse.coolect <- sapply(doparCollect, function(x) x$nrmse)
-      decomp.rssd.coolect <- sapply(doparCollect, function(x) x$decomp.rssd)
-      mape.lift.coolect <- sapply(doparCollect, function(x) x$mape.lift)
+      nrmse.collect <- sapply(doparCollect, function(x) x$nrmse)
+      decomp.rssd.collect <- sapply(doparCollect, function(x) x$decomp.rssd)
+      mape.lift.collect <- sapply(doparCollect, function(x) x$mape.lift)
       
       
       #####################################
@@ -1556,11 +1566,11 @@ f.mmm <- function(...
       if (fixed.out == F) {
         if (nrow(set_lift)==0) {
           for (co in 1:iterPar) {
-            optimizer$tell(nevergrad_hp[[co]], tuple(nrmse.coolect[co], decomp.rssd.coolect[co])) 
+            optimizer$tell(nevergrad_hp[[co]], tuple(nrmse.collect[co], decomp.rssd.collect[co])) 
           }
         } else {
           for (co in 1:iterPar) {
-            optimizer$tell(nevergrad_hp[[co]], tuple(nrmse.coolect[co], decomp.rssd.coolect[co], mape.lift.coolect[co])) 
+            optimizer$tell(nevergrad_hp[[co]], tuple(nrmse.collect[co], decomp.rssd.collect[co], mape.lift.collect[co])) 
           }
         }
       }
@@ -2503,7 +2513,7 @@ f.robyn.refresh <- function(initModPath
     assign("listParamRefresh", Robyn[[listName]][["listParamRefresh"]])
     assign("listOutputPrev", Robyn[[listName]][["listOutputRefresh"]])
     assign("listReportPrev", Robyn[[listName]][["listReport"]])
-    message(paste0("\n###### refresh model nr.",refreshCounter," loaded ... ######"))
+    message(paste0("\n###### refresh model nr.",refreshCounter-1," loaded ... ######"))
     
     ## model selection from previous build
     listOutputPrev$resultHypParam <- listOutputPrev$resultHypParam[bestModRF==T]
@@ -2521,9 +2531,9 @@ f.robyn.refresh <- function(initModPath
   f.inputDT(data_csv_name = data_csv_name # input time series should be daily, weekly or monthly
             , holiday_csv_name = holiday_csv_name # when using own holidays, please keep the header c("ds", "holiday", "country", "year")
             , csv_path = dataPath
-            , refresh = T)
+            , refresh = T
+            , xDecompAggPrev = listOutputPrev$xDecompAgg)
   dt_input <- listDTRefresh$dt_input
-  
   
   #### update refresh model parameters
   
@@ -2639,24 +2649,35 @@ f.robyn.refresh <- function(initModPath
   
   
   #### reporting plots
+  xDecompVecReportPlot <- copy(xDecompVecReport)
+  xDecompVecReportPlot[, ':='(refreshStart = min(ds)
+                          ,refreshEnd = max(ds)), by = "refreshStatus"]
+  xDecompVecReportPlot[, duration:= as.numeric((refreshEnd-refreshStart)/listParamRefresh$dayInterval)]
+  getRefreshStarts <- sort(unique(xDecompVecReportPlot$refreshStart))[-1]
+  dt_refreshDates <- unique(xDecompVecReportPlot[, .(refreshStatus=as.factor(refreshStatus), refreshStart, refreshEnd, duration)])
+  dt_refreshDates[, label:= ifelse(dt_refreshDates$refreshStatus==0
+                                   , paste0("initial: ", dt_refreshDates$refreshStart, ", ", dt_refreshDates$duration, listParamRefresh$intervalType, "s")
+                                   , paste0("refresh nr.", dt_refreshDates$refreshStatus,": ",dt_refreshDates$refreshStart, ", ", dt_refreshDates$duration, listParamRefresh$intervalType, "s"))]
   
-  getRefreshDates <- unique(xDecompVecReport$refreshStatus)
-  for (d in 1:length(getRefreshDates)) {
-    getRefreshDates[d] <- max(which(getRefreshDates[d]==xDecompVecReport$refreshStatus))+1
-  }
-  getRefreshDates <- getRefreshDates[1:(length(getRefreshDates)-1)]
-  getRefreshDates <- xDecompVecReport$ds[getRefreshDates]
+  # xDecompVecReportPlot <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-18 11.51 rf2/report_alldecomp_matrix.csv")
   
-  # xDecompVecReport <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-18 11.51 rf2/report_alldecomp_matrix.csv")
-  
-  xDecompVecReportMelted <- melt.data.table(xDecompVecReport[, .(ds, actual=depVar, predicted=depVarHat)] , id.vars = "ds")
-  pFitRF <- ggplot(xDecompVecReportMelted, aes(x = ds, y = value, color = variable)) +
-    geom_line()+
-    theme(legend.position = c(0.9, 0.9)) +
-    geom_vline(xintercept = getRefreshDates, linetype="dotted") + 
+  xDecompVecReportMelted <- melt.data.table(xDecompVecReportPlot[, .(ds, refreshStart, refreshEnd, refreshStatus, actual=depVar, predicted=depVarHat)] , id.vars = c("ds", "refreshStatus","refreshStart", "refreshEnd"))
+  pFitRF <- ggplot(data=xDecompVecReportMelted) +
+    geom_line(aes(x = ds, y = value, color = variable))+
+    geom_rect(data = dt_refreshDates, aes(xmin = refreshStart, xmax = refreshEnd, fill = refreshStatus)
+              , ymin = -Inf, ymax = Inf, alpha = 0.2) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank() ,# legend.position = c(0.1, 0.8), 
+          legend.background = element_rect(fill=alpha('white', 0.4)),
+          ) +
+    scale_fill_brewer(palette = 'BuGn') +
+    geom_text(data = dt_refreshDates, mapping=aes(x=refreshStart, y=max(xDecompVecReportMelted$value), label=label
+                                                  , angle=270, hjust=-0.1, vjust=-0.2), color = "gray40" )+
+    #geom_vline(xintercept = getRefreshStarts, linetype="dotted") + 
     labs(title="Model refresh: actual vs. predicted response"
-         ,subtitle = paste0("Assembled rsq: ", round(f.rsq(true=xDecompVecReport$depVar, predicted=xDecompVecReport$depVarHat),2)
-                            ,"\nRefresh dates: ", paste(getRefreshDates, collapse = ", "))
+         ,subtitle = paste0("Assembled rsq: ", round(f.rsq(true=xDecompVecReportPlot$depVar, predicted=xDecompVecReportPlot$depVarHat),2)
+                            #,"\nRefresh dates: ", paste(getRefreshStarts, collapse = ", ")
+                            )
          ,x="date" ,y="response")
   print(pFitRF)
 
