@@ -1,3 +1,4 @@
+
 # Copyright (c) Facebook, Inc. and its affiliates.
 
 # This source code is licensed under the MIT license found in the
@@ -7,35 +8,9 @@
 ###### Input and setup functions
 ########################################################################
 
-f.inputDT <- function(data_csv_name = "de_simulated_data.csv"
-                      ,holiday_csv_name = "holidays.csv"
-                      ,csv_path = script_path
-                      ,plot_corrmat = F
-                      ,refresh = F
-                      ,xDecompAggPrev = NULL
-                      
-) {
-  
-  dt_input <- fread(paste0(csv_path, data_csv_name))
-  dt_holidays <- fread(paste0(csv_path, holiday_csv_name))
-  
-  if (plot_corrmat) {
-    cor_mat <- cor(dt_input[, sapply(dt_input, is.numeric), with =F])
-    corrplot(cor_mat, type = "upper", order = "hclust", sig.level = 0.05, insig = "blank",tl.cex = 0.8)
-  }
-  
-  listDT <- list(dt_input=dt_input, dt_holidays=dt_holidays, dt_mod=NULL, dt_modRollWind=NULL, xDecompAggPrev = xDecompAggPrev)
-  if (!refresh) {
-    assign("listDT", listDT, envir = .GlobalEnv)
-  } else {
-    assign("listDTRefresh", listDT, envir = .GlobalEnv)
-  }
-  
-  #return(listDT)
-}
-
-
-f.inputParam <- function(listDT = parent.frame()$listDT
+robyn_inputs <- function(dt_input = fread(paste0(script_path, data_csv_name))
+                         ,dt_holidays = fread(paste0(script_path, holiday_csv_name))
+                         
                          ,set_dateVarName = NULL # date format must be "2020-01-01"
                          ,set_depVarName = NULL # there should be only one dependent variable
                          #,set_depVarType = "revenue" # "revenue" or "conversion" are allowed
@@ -80,30 +55,30 @@ f.inputParam <- function(listDT = parent.frame()$listDT
 ) {
   
   ## check listDT existence
-  if (is.null(listDT)) {stop("Object listDT is missing. Must run f.inputDT first")}
+  #if (is.null(listDT)) {stop("Object listDT is missing. Must run f.inputDT first")}
   
   ## check date input
-  inputLen <- length(listDT$dt_input[, get(set_dateVarName)])
-  inputLenUnique <- length(unique(listDT$dt_input[, get(set_dateVarName)]))
+  inputLen <- length(dt_input[, get(set_dateVarName)])
+  inputLenUnique <- length(unique(dt_input[, get(set_dateVarName)]))
   
-  if (is.null(set_dateVarName) | !(set_dateVarName %in% names(listDT$dt_input)) | length(set_dateVarName)>1) {
+  if (is.null(set_dateVarName) | !(set_dateVarName %in% names(dt_input)) | length(set_dateVarName)>1) {
     stop("Must provide correct only 1 date variable name for set_dateVarName")
-  } else if (any(is.na(as.Date(as.character(listDT$dt_input[, get(set_dateVarName)]), "%Y-%m-%d")))) {
+  } else if (any(is.na(as.Date(as.character(dt_input[, get(set_dateVarName)]), "%Y-%m-%d")))) {
     stop("Date variable in set_dateVarName must have format '2020-12-31'")
   } else if (inputLen != inputLenUnique) {
     stop("Date variable has duplicated dates. Please clean data first")
-  } else if (any(apply(listDT$dt_input, 2, function(x) any(is.na(x) | is.infinite(x))))) {
-    stop("listDT$dt_input has NA or Inf. Please clean data first")
+  } else if (any(apply(dt_input, 2, function(x) any(is.na(x) | is.infinite(x))))) {
+    stop("dt_input has NA or Inf. Please clean data first")
   }
   
-  listDT$dt_input <- listDT$dt_input[order(as.Date(listDT$dt_input[, get(set_dateVarName)]))]
-  dayInterval <- as.integer(difftime(as.Date(listDT$dt_input[, get(set_dateVarName)])[2], as.Date(listDT$dt_input[, get(set_dateVarName)])[1], units = "days"))
+  dt_input <- dt_input[order(as.Date(dt_input[, get(set_dateVarName)]))]
+  dayInterval <- as.integer(difftime(as.Date(dt_input[, get(set_dateVarName)])[2], as.Date(dt_input[, get(set_dateVarName)])[1], units = "days"))
   intervalType <- if(dayInterval==1) {"day"} else if (dayInterval==7) {"week"} else if (dayInterval %in% 28:31) {"month"} else {stop("input data has to be daily, weekly or monthly")}
   
   ## check dependent var
-  if (is.null(set_depVarName) | !(set_depVarName %in% names(listDT$dt_input)) | length(set_depVarName)>1) {
+  if (is.null(set_depVarName) | !(set_depVarName %in% names(dt_input)) | length(set_depVarName)>1) {
     stop("Must provide only 1 correct dependent variable name for set_depVarName")
-  } else if ( !(is.numeric(listDT$dt_input[, get(set_depVarName)]) | is.integer(listDT$dt_input[, get(set_depVarName)]))) {
+  } else if ( !(is.numeric(dt_input[, get(set_depVarName)]) | is.integer(dt_input[, get(set_depVarName)]))) {
     stop("set_depVarName must be numeric or integer")
   }
   
@@ -113,7 +88,7 @@ f.inputParam <- function(listDT = parent.frame()$listDT
   } else if (!all(set_prophet %in% c("trend","season", "weekday", "holiday"))) {
     stop("allowed values for set_prophet are 'trend', 'season', 'weekday' and 'holiday'")
   } else if (is.null(set_prophetCountry) | length(set_prophetCountry) >1) {
-    stop("1 country code must be provided in set_prophetCountry. ",listDT$dt_holidays[, uniqueN(country)], " countries are included: ", paste(listDT$dt_holidays[, unique(country)], collapse = ", "), ". If your country is not available, please add it to the holidays.csv first")
+    stop("1 country code must be provided in set_prophetCountry. ",dt_holidays[, uniqueN(country)], " countries are included: ", paste(dt_holidays[, unique(country)], collapse = ", "), ". If your country is not available, please add it to the holidays.csv first")
   } else if (is.null(set_prophetVarSign)) {
     set_prophetVarSign <- rep("default", length(set_prophet))
     message("set_prophetVarSign is not provided. 'default' is used")
@@ -124,7 +99,7 @@ f.inputParam <- function(listDT = parent.frame()$listDT
   ## check baseline variables
   if (is.null(set_baseVarName)) {
     set_baseVarSign <- NULL
-  } else if ( !all(set_baseVarName %in% names(listDT$dt_input)) ) {
+  } else if ( !all(set_baseVarName %in% names(dt_input)) ) {
     stop("Provided set_baseVarName is not included in input data")
   } else if (is.null(set_baseVarSign)) {
     set_baseVarSign <- rep("default", length(set_baseVarName))
@@ -138,20 +113,20 @@ f.inputParam <- function(listDT = parent.frame()$listDT
   spendVarCount <- length(set_mediaSpendName)
   if (is.null(set_mediaVarName) | is.null(set_mediaSpendName)) {
     stop("Must provide set_mediaVarName and set_mediaSpendName")
-  } else if ( !all(set_mediaVarName %in% names(listDT$dt_input)) ) {
+  } else if ( !all(set_mediaVarName %in% names(dt_input)) ) {
     stop("Provided set_mediaVarName is not included in input data")
   } else if (is.null(set_mediaVarSign)) {
     set_mediaVarSign <- rep("positive", mediaVarCount)
     message("set_mediaVarSign is not provided. 'positive' is used")
   } else if (length(set_mediaVarSign) != mediaVarCount | !all(set_mediaVarSign %in% c("positive", "negative", "default"))) {
     stop("set_mediaVarSign must have same length as set_mediaVarName. allowed values are 'positive', 'negative', 'default'")
-  } else if (!all(set_mediaSpendName %in% names(listDT$dt_input))) {
+  } else if (!all(set_mediaSpendName %in% names(dt_input))) {
     stop("Provided set_mediaSpendName is not included in input data")
   } else if (spendVarCount != mediaVarCount) {
     stop("set_mediaSpendName must have same length as set_mediaVarName.")
-  } else if (any(listDT$dt_input[, unique(c(set_mediaVarName, set_mediaSpendName)), with=F]<0)) {
+  } else if (any(dt_input[, unique(c(set_mediaVarName, set_mediaSpendName)), with=F]<0)) {
     check_media_names <- unique(c(set_mediaVarName, set_mediaSpendName))
-    check_media_val <- sapply(listDT$dt_input[, check_media_names, with=F], function(X) { any(X <0) })
+    check_media_val <- sapply(dt_input[, check_media_names, with=F], function(X) { any(X <0) })
     stop( paste(names(check_media_val)[check_media_val], collapse = ", "), " contains negative values. Media must be >=0")
   }
   
@@ -159,46 +134,46 @@ f.inputParam <- function(listDT = parent.frame()$listDT
   
   ## check set_rollingWindowStartDate & set_rollingWindowEndDate
   if (is.null(set_rollingWindowStartDate)) {
-    set_rollingWindowStartDate <- min(as.character(listDT$dt_input[, get(set_dateVarName)]))
+    set_rollingWindowStartDate <- min(as.character(dt_input[, get(set_dateVarName)]))
   } else if (is.na(as.Date(set_rollingWindowStartDate, "%Y-%m-%d"))) {
     stop("set_rollingWindowStartDate must have format '2020-12-31'")
-  } else if (set_rollingWindowStartDate < min(as.character(listDT$dt_input[, get(set_dateVarName)]))) {
-    set_rollingWindowStartDate <- min(as.character(listDT$dt_input[, get(set_dateVarName)]))
+  } else if (set_rollingWindowStartDate < min(as.character(dt_input[, get(set_dateVarName)]))) {
+    set_rollingWindowStartDate <- min(as.character(dt_input[, get(set_dateVarName)]))
     message("set_rollingWindowStartDate is smaller than the earliest date in input data. It's set to the earliest date")
-  } else if (set_rollingWindowStartDate > max(as.character(listDT$dt_input[, get(set_dateVarName)]))) {
+  } else if (set_rollingWindowStartDate > max(as.character(dt_input[, get(set_dateVarName)]))) {
     stop("set_rollingWindowStartDate can't be larger than the the latest date in input data")
   }
   
-  rollingWindowStartWhich <- which.min(abs(difftime(as.Date(listDT$dt_input[, get(set_dateVarName)]), as.Date(set_rollingWindowStartDate), units = "days")))
-  if (!(as.Date(set_rollingWindowStartDate) %in% listDT$dt_input[, get(set_dateVarName)])) {
-    set_rollingWindowStartDate <- listDT$dt_input[rollingWindowStartWhich, get(set_dateVarName)]
+  rollingWindowStartWhich <- which.min(abs(difftime(as.Date(dt_input[, get(set_dateVarName)]), as.Date(set_rollingWindowStartDate), units = "days")))
+  if (!(as.Date(set_rollingWindowStartDate) %in% dt_input[, get(set_dateVarName)])) {
+    set_rollingWindowStartDate <- dt_input[rollingWindowStartWhich, get(set_dateVarName)]
     message("set_rollingWindowStartDate is adapted to the closest date contained in input data: ", set_rollingWindowStartDate)
   }
   refreshAddedStart <- set_rollingWindowStartDate
   
   if (is.null(set_rollingWindowEndDate)) {
-    set_rollingWindowEndDate <- max(as.character(listDT$dt_input[, get(set_dateVarName)]))
+    set_rollingWindowEndDate <- max(as.character(dt_input[, get(set_dateVarName)]))
   } else if (is.na(as.Date(set_rollingWindowEndDate, "%Y-%m-%d"))) {
     stop("set_rollingWindowEndDate must have format '2020-12-31'")
-  } else if (set_rollingWindowEndDate > max(as.character(listDT$dt_input[, get(set_dateVarName)]))) {
-    set_rollingWindowEndDate <- max(as.character(listDT$dt_input[, get(set_dateVarName)]))
+  } else if (set_rollingWindowEndDate > max(as.character(dt_input[, get(set_dateVarName)]))) {
+    set_rollingWindowEndDate <- max(as.character(dt_input[, get(set_dateVarName)]))
     message("set_rollingWindowEndDate is larger than the latest date in input data. It's set to the latest date")
   } else if (set_rollingWindowEndDate < set_rollingWindowStartDate) {
-    set_rollingWindowEndDate <- max(as.character(listDT$dt_input[, get(set_dateVarName)]))
+    set_rollingWindowEndDate <- max(as.character(dt_input[, get(set_dateVarName)]))
     message("set_rollingWindowEndDate must be >= set_rollingWindowStartDate. It's set to latest date in input data")
   }
   
-  rollingWindowEndWhich <- which.min(abs(difftime(as.Date(listDT$dt_input[, get(set_dateVarName)]), as.Date(set_rollingWindowEndDate), units = "days")))
-  if (!(as.Date(set_rollingWindowEndDate) %in% listDT$dt_input[, get(set_dateVarName)])) {
-    set_rollingWindowEndDate <- listDT$dt_input[rollingWindowEndWhich, get(set_dateVarName)]
+  rollingWindowEndWhich <- which.min(abs(difftime(as.Date(dt_input[, get(set_dateVarName)]), as.Date(set_rollingWindowEndDate), units = "days")))
+  if (!(as.Date(set_rollingWindowEndDate) %in% dt_input[, get(set_dateVarName)])) {
+    set_rollingWindowEndDate <- dt_input[rollingWindowEndWhich, get(set_dateVarName)]
     message("set_rollingWindowEndDate is adapted to the closest date contained in input data: ", set_rollingWindowEndDate)
   }
   
   rollingWindowLength <- rollingWindowEndWhich - rollingWindowStartWhich +1
-  dt_init <- listDT$dt_input[rollingWindowStartWhich:rollingWindowEndWhich, set_mediaVarName, with =F]
+  dt_init <- dt_input[rollingWindowStartWhich:rollingWindowEndWhich, set_mediaVarName, with =F]
   init_all0 <- colSums(dt_init)==0
   if(any(init_all0)) {
-    stop("These media channels contains only 0 within training period ",listDT$dt_input[rollingWindowStartWhich, get(set_dateVarName)], " to ", listDT$dt_input[rollingWindowEndWhich, get(set_dateVarName)], ": ", paste(names(dt_init)[init_all0], collapse = ", ")
+    stop("These media channels contains only 0 within training period ",dt_input[rollingWindowStartWhich, get(set_dateVarName)], " to ", dt_input[rollingWindowEndWhich, get(set_dateVarName)], ": ", paste(names(dt_init)[init_all0], collapse = ", ")
          , " \nRecommendation: adapt listParam$set_rollingWindowStartDate, remove or combine these channels")
   }
   
@@ -222,7 +197,7 @@ f.inputParam <- function(listDT = parent.frame()$listDT
   ## check calibration
   
   if(nrow(set_lift)>0) {
-    if ((min(set_lift$liftStartDate) < min(listDT$dt_input[, get(set_dateVarName)])) | (max(set_lift$liftEndDate) >  (max(listDT$dt_input[, get(set_dateVarName)]) + dayInterval-1))) {
+    if ((min(set_lift$liftStartDate) < min(dt_input[, get(set_dateVarName)])) | (max(set_lift$liftEndDate) >  (max(dt_input[, get(set_dateVarName)]) + dayInterval-1))) {
       stop("we recommend you to only use lift results conducted within your MMM input data date range")
     } else if (set_iter < 500 | set_trial < 80) {
       message("you are calibrating MMM. we recommend to run at least 500 iterations per trial and at least 80 trials at the beginning")
@@ -233,7 +208,12 @@ f.inputParam <- function(listDT = parent.frame()$listDT
   
   ## 
   
-  listParam <- list(set_dateVarName=set_dateVarName
+  listInput <- list(dt_input=dt_input
+                    , dt_holidays=dt_holidays
+                    , dt_mod=NULL
+                    , dt_modRollWind=NULL
+                    , xDecompAggPrev = NULL
+                    ,set_dateVarName=set_dateVarName
                     ,dayInterval=dayInterval
                     ,intervalType=intervalType
                     
@@ -278,8 +258,13 @@ f.inputParam <- function(listDT = parent.frame()$listDT
                     ,set_lift=set_lift
   )
   
-  assign("listParam", listParam, envir = .GlobalEnv)
-  assign("listDT", listDT, envir = .GlobalEnv)
+  # assign("listParam", listParam, envir = .GlobalEnv)
+  # assign("listDT", listDT, envir = .GlobalEnv)
+  
+  #listDT <- list(dt_input=dt_input, dt_holidays=dt_holidays, dt_mod=NULL, dt_modRollWind=NULL, xDecompAggPrev = NULL)
+  
+  outFeatEng <- robyn_engineering(listInput = listInput, refresh = F)
+  return(outFeatEng)
 }
 
 
@@ -288,10 +273,8 @@ f.inputParam <- function(listDT = parent.frame()$listDT
 ###### Data transformation and helper functions
 ########################################################################
 
-################################################################
-#### Define training size guidance plot using Bhattacharyya coefficient
 
-f.plotAdstockCurves <- function(plotAdstockCurves, adstock=listParam$adstock) {
+plot_adstock <- function(plotAdstockCurves, adstock=listInput$adstock) {
   if (plotAdstockCurves) {
     if (adstock == "weibull") {
       weibullCollect <- list()
@@ -362,7 +345,7 @@ f.plotAdstockCurves <- function(plotAdstockCurves, adstock=listParam$adstock) {
   }
 }
 
-f.plotResponseCurves <- function(plotResponseCurves) {
+plot_saturation <- function(plotResponseCurves) {
   if (plotResponseCurves) {
     xSample <- 1:100
     alphaSamp <- c(0.1, 0.5, 1, 2, 3)
@@ -421,73 +404,76 @@ f.unit_format <- function(x_in) {
 ################################################################
 #### Define major input data transformation function
 
-f.featureEngineering <- function(listDT = parent.frame()$listDT
-                                 #dt_transform = listDT$dt_input, 
-                                 , listParam = parent.frame()$listParam
-                                 , refresh = F) {
+
+robyn_engineering <- function(listInput = listInput
+                              # ,listDT = parent.frame()$listDT
+                              # dt_transform = listDT$dt_input, 
+                              #, listParam = parent.frame()$listParam
+                              , refresh = F) {
   
-  dt_input <- copy(listDT$dt_input) # dt_input <- copy(listDT$dt_input)
-  dt_inputRollWind <- dt_input[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich] # dt_inputRollWind <- listDT$dt_input[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich]
   
-  dt_transform <- copy(listDT$dt_input) # dt_transform <- copy(listDT$dt_input)
-  setnames(dt_transform, listParam$set_dateVarName, "ds", skip_absent = T)
+  dt_input <- copy(listInput$dt_input) # dt_input <- copy(listInput$dt_input)
+  dt_inputRollWind <- dt_input[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich] # dt_inputRollWind <- listInput$dt_input[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
+  
+  dt_transform <- copy(listInput$dt_input) # dt_transform <- copy(listInput$dt_input)
+  setnames(dt_transform, listInput$set_dateVarName, "ds", skip_absent = T)
   dt_transform <- dt_transform[, ':='(ds= as.Date(ds))][order(ds)]
-  dt_transformRollWind <- dt_transform[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich]
+  dt_transformRollWind <- dt_transform[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
   
-  setnames(dt_transform, listParam$set_depVarName, "depVar", skip_absent = T) #; listParam$set_depVarName <- "depVar"
-  #indepName <- c(listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName)
+  setnames(dt_transform, listInput$set_depVarName, "depVar", skip_absent = T) #; listInput$set_depVarName <- "depVar"
+  #indepName <- c(listInput$set_prophet, listInput$set_baseVarName, listInput$set_mediaVarName)
   
   ## check date format
   # tryCatch({
   #   dateCheck <- as.Date(dt_transform$ds)
-  #   dateCheckStart <- as.Date(listParam$set_rollingWindowStartDate)
+  #   dateCheckStart <- as.Date(listInput$set_rollingWindowStartDate)
   # },
   # error= function(cond) {
-  #   stop("input date variable and listParam$set_rollingWindowStartDate should have format '2020-01-01'")
+  #   stop("input date variable and listInput$set_rollingWindowStartDate should have format '2020-01-01'")
   # })
   
   # if (any(dateCheckStart< min(dt_transform$ds), dateCheckStart> max(dt_transform$ds))) {
-  #   stop("listParam$set_rollingWindowStartDate must be between ", min(dt_transform$ds) ," and ",max(dt_transform$ds))
+  #   stop("listInput$set_rollingWindowStartDate must be between ", min(dt_transform$ds) ," and ",max(dt_transform$ds))
   # }
   
   ## check variables existence
   
-  # if (is.null(listParam$set_mediaSpendName)) {stop("listParam$set_mediaSpendName must be specified")
-  # } else if(length(listParam$set_mediaVarName) != length(listParam$set_mediaSpendName)) {
-  #   stop("listParam$set_mediaSpendName and listParam$set_mediaVarName have to be the same length and same order")}
+  # if (is.null(listInput$set_mediaSpendName)) {stop("listInput$set_mediaSpendName must be specified")
+  # } else if(length(listInput$set_mediaVarName) != length(listInput$set_mediaSpendName)) {
+  #   stop("listInput$set_mediaSpendName and listInput$set_mediaVarName have to be the same length and same order")}
   
   
   #trainSize <- round(nrow(dt_transform)* set_modTrainSize)
-  #dt_train <- dt_transform[1:trainSize, listParam$set_mediaVarName, with =F]
-  # trainStartWhich <- which.min(abs(difftime(as.Date(dt_transform$ds), as.Date(listParam$set_rollingWindowStartDate), units = "days")))
-  # dt_train <- dt_transform[trainStartWhich:nrow(dt_transform), listParam$set_mediaVarName, with =F]
+  #dt_train <- dt_transform[1:trainSize, listInput$set_mediaVarName, with =F]
+  # trainStartWhich <- which.min(abs(difftime(as.Date(dt_transform$ds), as.Date(listInput$set_rollingWindowStartDate), units = "days")))
+  # dt_train <- dt_transform[trainStartWhich:nrow(dt_transform), listInput$set_mediaVarName, with =F]
   # train_all0 <- colSums(dt_train)==0
   # if(any(train_all0)) {
   #   stop("These media channels contains only 0 within training period ",dt_transform$ds[trainStartWhich], " to ", max(dt_transform$ds), ": ", paste(names(dt_train)[train_all0], collapse = ", ")
-  #        , " \nRecommendation: adapt listParam$set_rollingWindowStartDate, remove or combine these channels")
+  #        , " \nRecommendation: adapt listInput$set_rollingWindowStartDate, remove or combine these channels")
   # }
   
   
   #hypName <- c("thetas", "shapes", "scales", "alphas", "gammas", "lambdas") # defind hyperparameter names
   #dayInterval <- as.integer(difftime(sort(unique(dt_transform$ds))[2], sort(unique(dt_transform$ds))[1], units = "days"))
   #intervalType <- if(dayInterval==1) {"day"} else if (dayInterval==7) {"week"} else if (dayInterval %in% 28:31) {"month"} else {stop("input data has to be daily, weekly or monthly")}
-  #mediaVarCount <- length(listParam$set_mediaVarName)
+  #mediaVarCount <- length(listInput$set_mediaVarName)
   
   ################################################################
   #### model exposure metric from spend
   
-  mediaCostFactor <- unlist(dt_inputRollWind[, lapply(.SD, sum), .SDcols = listParam$set_mediaSpendName] / dt_inputRollWind[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName])
-  names(mediaCostFactor) <- listParam$set_mediaVarName
-  costSelector <- !(listParam$set_mediaSpendName == listParam$set_mediaVarName)
-  names(costSelector) <- listParam$set_mediaVarName
+  mediaCostFactor <- unlist(dt_inputRollWind[, lapply(.SD, sum), .SDcols = listInput$set_mediaSpendName] / dt_inputRollWind[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName])
+  names(mediaCostFactor) <- listInput$set_mediaVarName
+  costSelector <- !(listInput$set_mediaSpendName == listInput$set_mediaVarName)
+  names(costSelector) <- listInput$set_mediaVarName
   
   if (any(costSelector)) {
     modNLSCollect <- list()
     yhatCollect <- list()
     plotNLSCollect <- list()
-    for (i in 1:listParam$mediaVarCount) {
+    for (i in 1:listInput$mediaVarCount) {
       if (costSelector[i]) {
-        dt_spendModInput <- dt_inputRollWind[, c(listParam$set_mediaSpendName[i],listParam$set_mediaVarName[i]), with =F]
+        dt_spendModInput <- dt_inputRollWind[, c(listInput$set_mediaSpendName[i],listInput$set_mediaVarName[i]), with =F]
         setnames(dt_spendModInput, names(dt_spendModInput), c("spend", "exposure"))
         #dt_spendModInput <- dt_spendModInput[spend !=0 & exposure != 0]
         
@@ -537,7 +523,7 @@ f.featureEngineering <- function(listDT = parent.frame()$listDT
             #                                  ,control = nls.control(warnOnly = T)))
             # warning("default start value for nls out of range. using c(1,1) instead")
             # return(modNLS)
-            message("michaelis menten fitting for ", listParam$set_mediaVarName[i]," out of range. using lm instead")
+            message("michaelis menten fitting for ", listInput$set_mediaVarName[i]," out of range. using lm instead")
             
           }
         )
@@ -547,12 +533,12 @@ f.featureEngineering <- function(listDT = parent.frame()$listDT
         yhatLM <- predict(modLM)
         modLMSum <- summary(modLM)
         rsq_lm <- f.rsq(dt_spendModInput$exposure, yhatLM) 
-        if (is.na(rsq_lm)) {stop("please check if ",listParam$set_mediaVarName[i]," constains only 0")}
+        if (is.na(rsq_lm)) {stop("please check if ",listInput$set_mediaVarName[i]," constains only 0")}
         
         # compare NLS & LM, takes LM if NLS fits worse
         costSelector[i] <- if(is.null(rsq_nls)) {FALSE} else {rsq_nls > rsq_lm}
         
-        modNLSCollect[[listParam$set_mediaVarName[i]]] <- data.table(channel = listParam$set_mediaVarName[i],
+        modNLSCollect[[listInput$set_mediaVarName[i]]] <- data.table(channel = listInput$set_mediaVarName[i],
                                                                      Vmax = if (!is.null(modNLS)) {modNLSSum$coefficients[1,1]} else {NA},
                                                                      Km =  if (!is.null(modNLS)) {modNLSSum$coefficients[2,1]} else {NA},
                                                                      aic_nls = if (!is.null(modNLS)) {AIC(modNLS)} else {NA},
@@ -564,7 +550,7 @@ f.featureEngineering <- function(listDT = parent.frame()$listDT
                                                                      coef_lm = coef(modLMSum)[1]
         )
         
-        dt_plotNLS <- data.table(channel = listParam$set_mediaVarName[i],
+        dt_plotNLS <- data.table(channel = listInput$set_mediaVarName[i],
                                  yhatNLS = if(costSelector[i]) {yhatNLS} else {yhatLM},
                                  yhatLM = yhatLM,
                                  y = dt_spendModInput$exposure,
@@ -572,13 +558,13 @@ f.featureEngineering <- function(listDT = parent.frame()$listDT
         dt_plotNLS <- melt.data.table(dt_plotNLS, id.vars = c("channel", "y", "x"), variable.name = "models", value.name = "yhat")
         dt_plotNLS[, models:= str_remove(tolower(models), "yhat")]
         
-        yhatCollect[[listParam$set_mediaVarName[i]]] <- dt_plotNLS
+        yhatCollect[[listInput$set_mediaVarName[i]]] <- dt_plotNLS
         
         # create plot
-        plotNLSCollect[[listParam$set_mediaVarName[i]]] <- ggplot(dt_plotNLS, aes(x=x, y=y, color = models)) +
+        plotNLSCollect[[listInput$set_mediaVarName[i]]] <- ggplot(dt_plotNLS, aes(x=x, y=y, color = models)) +
           geom_point() +
           geom_line(aes(y=yhat, x=x, color = models)) +
-          labs(subtitle = paste0("y=",listParam$set_mediaVarName[i],", x=", listParam$set_mediaSpendName[i],
+          labs(subtitle = paste0("y=",listInput$set_mediaVarName[i],", x=", listInput$set_mediaSpendName[i],
                                  "\nnls: aic=", round(AIC(if(costSelector[i]) {modNLS} else {modLM}),0), ", rsq=", round(if(costSelector[i]) {rsq_nls} else {rsq_lm},4),
                                  "\nlm: aic= ", round(AIC(modLM),0), ", rsq=", round(rsq_lm,4)),
                x = "spend",
@@ -599,63 +585,63 @@ f.featureEngineering <- function(listDT = parent.frame()$listDT
     yhatNLSCollect <- NULL
   }
   
-  getSpendSum <- dt_input[, lapply(.SD, sum), .SDcols=listParam$set_mediaSpendName]
-  names(getSpendSum) <- listParam$set_mediaVarName
-  getSpendSum <- suppressWarnings(melt.data.table(getSpendSum, measure.vars= listParam$set_mediaVarName, variable.name = "rn", value.name = "spend"))
+  getSpendSum <- dt_input[, lapply(.SD, sum), .SDcols=listInput$set_mediaSpendName]
+  names(getSpendSum) <- listInput$set_mediaVarName
+  getSpendSum <- suppressWarnings(melt.data.table(getSpendSum, measure.vars= listInput$set_mediaVarName, variable.name = "rn", value.name = "spend"))
   
   ################################################################
   #### clean & aggregate data
   
-  all_name <- unique(c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName #, set_keywordsVarName, listParam$set_mediaSpendName
+  all_name <- unique(c("ds", "depVar", listInput$set_prophet, listInput$set_baseVarName, listInput$set_mediaVarName #, set_keywordsVarName, listInput$set_mediaSpendName
   ))
-  all_mod_name <- c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName)
+  all_mod_name <- c("ds", "depVar", listInput$set_prophet, listInput$set_baseVarName, listInput$set_mediaVarName)
   if(!identical(all_name, all_mod_name)) {stop("Input variables must have unique names")}
   
   ## transform all factor variables
   
-  if (length(listParam$set_factorVarName)>0) {
-    dt_transform[, (listParam$set_factorVarName):= as.factor(get(listParam$set_factorVarName)) ]
+  if (length(listInput$set_factorVarName)>0) {
+    dt_transform[, (listInput$set_factorVarName):= as.factor(get(listInput$set_factorVarName)) ]
   } 
   
   ################################################################
   #### Obtain prophet trend, seasonality and changepoints
   
-  if ( !is.null(listParam$set_prophet) ) {
+  if ( !is.null(listInput$set_prophet) ) {
     
-    if(length(listParam$set_prophet) != length(listParam$set_prophetVarSign)) {stop("listParam$set_prophet and listParam$set_prophetVarSign have to be the same length")}
-    if(any(length(listParam$set_prophet)==0, length(listParam$set_prophetVarSign)==0)) {stop("listParam$set_prophet and listParam$set_prophetVarSign must be both specified")}
-    if(!(listParam$set_prophetCountry %in% listDT$dt_holidays$country)) {stop("listParam$set_prophetCountry must be already included in the holidays.csv and as ISO 3166-1 alpha-2 abbreviation")}
+    if(length(listInput$set_prophet) != length(listInput$set_prophetVarSign)) {stop("listInput$set_prophet and listInput$set_prophetVarSign have to be the same length")}
+    if(any(length(listInput$set_prophet)==0, length(listInput$set_prophetVarSign)==0)) {stop("listInput$set_prophet and listInput$set_prophetVarSign must be both specified")}
+    if(!(listInput$set_prophetCountry %in% listInput$dt_holidays$country)) {stop("listInput$set_prophetCountry must be already included in the holidays.csv and as ISO 3166-1 alpha-2 abbreviation")}
     
     recurrance <- dt_transform[, .(ds = ds, y = depVar)]
-    use_trend <- any(str_detect("trend", listParam$set_prophet))
-    use_season <- any(str_detect("season", listParam$set_prophet))
-    use_weekday <- any(str_detect("weekday", listParam$set_prophet))
-    use_holiday <- any(str_detect("holiday", listParam$set_prophet))
+    use_trend <- any(str_detect("trend", listInput$set_prophet))
+    use_season <- any(str_detect("season", listInput$set_prophet))
+    use_weekday <- any(str_detect("weekday", listInput$set_prophet))
+    use_holiday <- any(str_detect("holiday", listInput$set_prophet))
     
-    if (listParam$intervalType == "day") {
+    if (listInput$intervalType == "day") {
       
-      holidays <- listDT$dt_holidays
+      holidays <- listInput$dt_holidays
       
-    } else if (listParam$intervalType == "week") {
+    } else if (listInput$intervalType == "week") {
       
       weekStartInput <- wday(dt_transform[1, ds])
       weekStartMonday <- if(weekStartInput==2) {TRUE} else if (weekStartInput==1) {FALSE} else {stop("week start has to be Monday or Sunday")}
-      listDT$dt_holidays[, dsWeekStart:= cut(as.Date(ds), breaks = listParam$intervalType, start.on.monday = weekStartMonday)]
-      holidays <- listDT$dt_holidays[, .(ds=dsWeekStart, holiday, country, year)]
+      listInput$dt_holidays[, dsWeekStart:= cut(as.Date(ds), breaks = listInput$intervalType, start.on.monday = weekStartMonday)]
+      holidays <- listInput$dt_holidays[, .(ds=dsWeekStart, holiday, country, year)]
       holidays <- holidays[, lapply(.SD, paste0, collapse="#"), by = c("ds", "country", "year"), .SDcols = "holiday"]
       
-    } else if (listParam$intervalType == "month") {
+    } else if (listInput$intervalType == "month") {
       
       monthStartInput <- all(day(dt_transform[, ds]) ==1)
       if (monthStartInput==FALSE) {stop("monthly data should have first day of month as datestampe, e.g.'2020-01-01' ")}
-      listDT$dt_holidays[, dsMonthStart:= cut(as.Date(ds), listParam$intervalType)]
-      holidays <- listDT$dt_holidays[, .(ds=dsMonthStart, holiday, country, year)]
+      listInput$dt_holidays[, dsMonthStart:= cut(as.Date(ds), listInput$intervalType)]
+      holidays <- listInput$dt_holidays[, .(ds=dsMonthStart, holiday, country, year)]
       holidays <- holidays[, lapply(.SD, paste0, collapse="#"), by = c("ds", "country", "year"), .SDcols = "holiday"]
       
     }
     
     modelRecurrance<- prophet(recurrance
-                              ,holidays = if(use_holiday) {holidays[country==listParam$set_prophetCountry]} else {NULL}
+                              ,holidays = if(use_holiday) {holidays[country==listInput$set_prophetCountry]} else {NULL}
                               ,yearly.seasonality = use_season
                               ,weekly.seasonality = use_weekday
                               ,daily.seasonality= F
@@ -664,20 +650,20 @@ f.featureEngineering <- function(listDT = parent.frame()$listDT
                               #,changepoint.prior.scale = 0.1
     )
     
-    #futureDS <- make_future_dataframe(modelRecurrance, periods=1, freq = listParam$intervalType)
+    #futureDS <- make_future_dataframe(modelRecurrance, periods=1, freq = listInput$intervalType)
     forecastRecurrance <- predict(modelRecurrance, dt_transform[, "ds", with =F])
     
     # if (use_regressor) {
-    #   m.recurrance <- cbind(recurrance, dt_transform[, c(listParam$set_baseVarName, listParam$set_mediaVarName), with =F])
-    #   modelRecurrance <- prophet(holidays = if(use_holiday) {holidays[country==listParam$set_prophetCountry]} else {NULL}
+    #   m.recurrance <- cbind(recurrance, dt_transform[, c(listInput$set_baseVarName, listInput$set_mediaVarName), with =F])
+    #   modelRecurrance <- prophet(holidays = if(use_holiday) {holidays[country==listInput$set_prophetCountry]} else {NULL}
     #                 ,yearly.seasonality = use_season
     #                 ,weekly.seasonality = use_weekday 
     #                 ,daily.seasonality= F)
-    #   for (addreg in c(listParam$set_baseVarName, listParam$set_mediaVarName)) {
+    #   for (addreg in c(listInput$set_baseVarName, listInput$set_mediaVarName)) {
     #     modelRecurrance <- add_regressor(modelRecurrance, addreg)
     #   }
     #   modelRecurrance <- fit.prophet(modelRecurrance, m.recurrance)
-    #   forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",listParam$set_baseVarName, listParam$set_mediaVarName), with =F])
+    #   forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",listInput$set_baseVarName, listInput$set_mediaVarName), with =F])
     #   prophet_plot_components(modelRecurrance, forecastRecurrance)
     # }
     
@@ -712,33 +698,34 @@ f.featureEngineering <- function(listDT = parent.frame()$listDT
   #dt <- dt[, all_name, with = F]
   dt_transform <- dt_transform[, all_mod_name, with = F]
   
-  listDT$dt_mod <- dt_transform
-  listDT$dt_modRollWind <- dt_transform[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich]
-  listDT$dt_inputRollWind <- dt_inputRollWind
+  listInput$dt_mod <- dt_transform
+  listInput$dt_modRollWind <- dt_transform[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
+  listInput$dt_inputRollWind <- dt_inputRollWind
   
-  listParam[['modNLSCollect']] <- modNLSCollect
-  listParam[['plotNLSCollect']] <- plotNLSCollect  
-  listParam[['yhatNLSCollect']] <- yhatNLSCollect  
-  listParam[['costSelector']] <- costSelector  
-  listParam[['mediaCostFactor']] <- mediaCostFactor  
+  listInput[['modNLSCollect']] <- modNLSCollect
+  listInput[['plotNLSCollect']] <- plotNLSCollect  
+  listInput[['yhatNLSCollect']] <- yhatNLSCollect  
+  listInput[['costSelector']] <- costSelector  
+  listInput[['mediaCostFactor']] <- mediaCostFactor  
   
   #f.checkConditions(dt_transform = dt_transform, listParam = listParam)
   
-  if (!refresh) {
-    assign("listDT", listDT, envir = .GlobalEnv)
-    assign("listParam", listParam, envir = .GlobalEnv)
-  } else {
-    assign("listDTRefresh", listDT, envir = .GlobalEnv)
-    assign("listParamRefresh", listParam, envir = .GlobalEnv)
-  }
+  # if (!refresh) {
+  #   assign("listInput", listInput, envir = .GlobalEnv)
+  #   assign("listParam", listParam, envir = .GlobalEnv)
+  # } else {
+  #   assign("listDTRefresh", listInput, envir = .GlobalEnv)
+  #   assign("listParamRefresh", listParam, envir = .GlobalEnv)
+  # }
   
+   return(listInput)
   #return(dt_transform)
 }
 
 ################################################################
 #### Define hyperparameter names extraction function
 
-f.getHyperNames <- function(adstock = parent.frame()$listParam$adstock, set_mediaVarName=parent.frame()$listParam$set_mediaVarName) {
+f.getHyperNames <- function(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName) {
   global_name <- c("thetas",  "shapes",  "scales",  "alphas",  "gammas",  "lambdas")
   if (adstock == "geometric") {
     local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
@@ -923,7 +910,7 @@ f.decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, refre
   
   xDecompOutAgg <- sapply(xDecompOut[, c("intercept", indepVarName), with =F], function(x) sum(x))
   xDecompOutAggPerc <- xDecompOutAgg / sum(y_hat)
-  xDecompOutAggMeanNon0 <- sapply(xDecompOut[, c("intercept", indepVarName), with =F], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x>0])))
+  xDecompOutAggMeanNon0 <- sapply(xDecompOut[, c("intercept", indepVarName), with =F], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x!=0])))
   xDecompOutAggMeanNon0[is.nan(xDecompOutAggMeanNon0)] <- 0
   xDecompOutAggMeanNon0Perc <- xDecompOutAggMeanNon0/sum(xDecompOutAggMeanNon0)
   #xDecompOutAggPerc.scaled <- abs(xDecompOutAggPerc)/sum(abs(xDecompOutAggPerc))
@@ -935,7 +922,7 @@ f.decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, refre
   xDecompOutAggRF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =F], function(x) sum(x))
   y_hatRF <- y_hat[refreshAddedStartWhich:refreshAddedEndWhich]
   xDecompOutAggPercRF <- xDecompOutAggRF / sum(y_hatRF)
-  xDecompOutAggMeanNon0RF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =F], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x>0])))
+  xDecompOutAggMeanNon0RF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =F], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x!=0])))
   xDecompOutAggMeanNon0RF[is.nan(xDecompOutAggMeanNon0RF)] <- 0
   xDecompOutAggMeanNon0PercRF <- xDecompOutAggMeanNon0RF/sum(xDecompOutAggMeanNon0RF)
   
@@ -1055,7 +1042,7 @@ f.refit <- function(x_train, y_train, lambda, lower.limits, upper.limits) {
   coefs <- as.matrix(coef(mod))
   #y_pred <- c(y_trainPred, y_testPred)
   
-  nrmse_train <- sqrt(mean(sum((y_train - y_trainPred)^2))) / (max(y_train) - min(y_train)) # mean(y_train) sd(y_train)
+  nrmse_train <- sqrt(mean((y_train - y_trainPred)^2)) / (max(y_train) - min(y_train)) # mean(y_train) sd(y_train)
   #nrmse_test <- sqrt(mean(sum((y_test - y_testPred)^2))) / (max(y_test) - min(y_test)) # mean(y_test) sd(y_test)
   
   mod_out <- list(rsq_train = rsq_train
@@ -1074,9 +1061,10 @@ f.refit <- function(x_train, y_train, lambda, lower.limits, upper.limits) {
 #### Define major mmm function
 
 f.mmm <- function(...
-                  , listParam = parent.frame()$listParam
-                  , listDT = parent.frame()$listDT
-                  , set_iter = parent.frame()$listParam$set_iter
+                  # , listParam = parent.frame()$listParam
+                  # , listDT = parent.frame()$listDT
+                  , listInput
+                  , set_iter = listInput$set_iter
                   , lambda.n = 100
                   , fixed.out = FALSE
                   , fixed.lambda = NULL
@@ -1086,10 +1074,10 @@ f.mmm <- function(...
   ################################################
   #### Collect hyperparameters
   
-  hypParamSamName <- f.getHyperNames()
+  hypParamSamName <- f.getHyperNames(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName)
   
   if (fixed.out==FALSE) {
-    input.collect <- unlist(list(...), recursive = FALSE) # input.collect <- listParam$set_hyperBoundLocal
+    input.collect <- unlist(list(...), recursive = FALSE) # input.collect <- listInput$set_hyperBoundLocal
     
     # sort hyperparameter list by name
     hyper_bound_local <- list()
@@ -1112,15 +1100,15 @@ f.mmm <- function(...
     num_hyppar_fixed <- length(hyper_bound_local_fixed)
     
     #hyper_bound_local_fixed <- list(print_S_alphas = 1 , print_S_gammas = 0.5)
-    if (listParam$set_cores >1) {
-      hyper_bound_local_fixed_dt <- data.table(sapply(hyper_bound_local_fixed, function(x) rep(x, listParam$set_cores)))
+    if (listInput$set_cores >1) {
+      hyper_bound_local_fixed_dt <- data.table(sapply(hyper_bound_local_fixed, function(x) rep(x, listInput$set_cores)))
     } else {
       hyper_bound_local_fixed_dt <- as.data.table(matrix(hyper_bound_local_fixed, nrow = 1))
       names(hyper_bound_local_fixed_dt) <- hyper_bound_local_fixed_name
     }
     
   } else {
-    #input.collect <- listParam$set_hyperBoundLocal
+    #input.collect <- listInput$set_hyperBoundLocal
     #input.fixed <- dt_hyperResult
     input.fixed <- list(...)[[1]]
     num_hyppar_ng <- length(hypParamSamName)
@@ -1133,25 +1121,27 @@ f.mmm <- function(...
   ################################################
   #### Setup environment
   
-  if (is.null(listDT$dt_mod)) {stop("Run listDT$dt_mod <- f.featureEngineering() first to get the dt_mod")}
+  if (is.null(listInput$dt_mod)) {stop("Run listInput$dt_mod <- robyn_engineering() first to get the dt_mod")}
   
   ## get environment for parallel backend
-  dt_mod <- copy(listDT$dt_mod)
-  xDecompAggPrev <- listDT$xDecompAggPrev
-  rollingWindowStartWhich <- listParam$rollingWindowStartWhich
-  rollingWindowEndWhich <- listParam$rollingWindowEndWhich
-  refreshAddedStart <- listParam$refreshAddedStart
-  dt_modRollWind <- copy(listDT$dt_modRollWind)
+  dt_mod <- copy(listInput$dt_mod)
+  xDecompAggPrev <- listInput$xDecompAggPrev
+  rollingWindowStartWhich <- listInput$rollingWindowStartWhich
+  rollingWindowEndWhich <- listInput$rollingWindowEndWhich
+  refreshAddedStart <- listInput$refreshAddedStart
+  dt_modRollWind <- copy(listInput$dt_modRollWind)
+  stepForward <- listInput$stepForward
+  rollingWindowLength <- listInput$rollingWindowLength
   
-  set_mediaVarName <- listParam$set_mediaVarName
-  set_mediaSpendName <- listParam$set_mediaSpendName
-  adstock <- listParam$adstock
-  set_baseVarSign <- listParam$set_baseVarSign
-  set_mediaVarSign <- listParam$set_mediaVarSign
-  set_prophetVarSign <- listParam$set_prophetVarSign
-  #set_factorVarName <- listParam$set_factorVarName
-  set_lift <- listParam$set_lift
-  optimizer_name <- listParam$set_hyperOptimAlgo
+  set_mediaVarName <- listInput$set_mediaVarName
+  set_mediaSpendName <- listInput$set_mediaSpendName
+  adstock <- listInput$adstock
+  set_baseVarSign <- listInput$set_baseVarSign
+  set_mediaVarSign <- listInput$set_mediaVarSign
+  set_prophetVarSign <- listInput$set_prophetVarSign
+  #set_factorVarName <- listInput$set_factorVarName
+  set_lift <- listInput$set_lift
+  optimizer_name <- listInput$set_hyperOptimAlgo
   
   ng <- import("nevergrad")
   
@@ -1167,23 +1157,24 @@ f.mmm <- function(...
   # optimizer_name <- "Cobyla"
   # optimizer_name <- "NaiveTBPSA"
   # optimizer_name <- "DiscreteOnePlusOne"
+  # optimizer_name <- "PortfolioDiscreteOnePlusOne"
   # optimizer_name <- "cGA"
   # optimizer_name <- "ScrHammersleySearch"
   
   ################################################
   #### Get spend share
   
-  #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listParam$set_rollingWindowStartDate), units = "days")))
-  #dt_inputTrain <- listDT$dt_input[listDT$dt_input[, rank(.SD), .SDcols = listParam$set_dateVarName]]
+  #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listInput$set_rollingWindowStartDate), units = "days")))
+  #dt_inputTrain <- listInput$dt_input[listInput$dt_input[, rank(.SD), .SDcols = listInput$set_dateVarName]]
   #dt_inputTrain <- dt_inputTrain[trainStartWhich:nrow(dt_inputTrain)]
-  dt_inputTrain <- listDT$dt_input[rollingWindowStartWhich:rollingWindowEndWhich]
+  dt_inputTrain <- listInput$dt_input[rollingWindowStartWhich:rollingWindowEndWhich]
   dt_spendShare <- dt_inputTrain[, .(rn = set_mediaVarName,
                                      total_spend = sapply(.SD, sum),
                                      mean_spend = sapply(.SD, function(x) ifelse(is.na(mean(x[x>0])),0, mean(x[x>0])))), .SDcols=set_mediaSpendName]
   dt_spendShare[, ':='(spend_share = mean_spend / sum(mean_spend))]
   
   refreshAddedStartWhich <- which(dt_modRollWind$ds==refreshAddedStart)
-  dt_spendShareRF <- dt_inputTrain[refreshAddedStartWhich:listParam$rollingWindowLength, 
+  dt_spendShareRF <- dt_inputTrain[refreshAddedStartWhich:listInput$rollingWindowLength, 
                                    .(rn = set_mediaVarName,
                                      total_spend = sapply(.SD, sum),
                                      mean_spend = sapply(.SD, function(x) ifelse(is.na(mean(x[x>0])),0, mean(x[x>0])))) 
@@ -1202,7 +1193,7 @@ f.mmm <- function(...
   ## set iterations
   if (fixed.out == F) {
     iterTotal <- set_iter
-    iterPar <- listParam$set_cores
+    iterPar <- listInput$set_cores
   } else if (num_hyppar_ng==0 & fixed.out == T) {
     iterTotal <- 1
     iterPar <- 1
@@ -1210,17 +1201,17 @@ f.mmm <- function(...
     iterTotal <- nrow(input.fixed)
     iterPar <- nrow(input.fixed)
   }
-  iterNG <-  ifelse(fixed.out == F, ceiling(set_iter/listParam$set_cores), 1)
+  iterNG <-  ifelse(fixed.out == F, ceiling(set_iter/listInput$set_cores), 1)
   
-  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_local_ng),"hyperparameters,",lambda.n,"-fold ridge x-validation using",listParam$set_cores,"cores...\n")
+  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_local_ng),"hyperparameters,",lambda.n,"-fold ridge x-validation using",listInput$set_cores,"cores...\n")
   
   ## start Nevergrad optimiser
   
   if (length(hyper_bound_local_ng) !=0) {
     my_tuple <- tuple(num_hyppar_ng)
-    instrumentation <- ng$p$Array(shape=my_tuple)
-    instrumentation$set_bounds(0., 1.)
-    optimizer <-  ng$optimizers$registry[optimizer_name](instrumentation, budget=iterTotal, num_workers=listParam$set_cores)
+    instrumentation <- ng$p$Array(shape=my_tuple, lower=0., upper=1.)
+    #instrumentation$set_bounds(0., 1.)
+    optimizer <-  ng$optimizers$registry[optimizer_name](instrumentation, budget=iterTotal, num_workers=listInput$set_cores)
     if (nrow(set_lift)==0) {
       optimizer$tell(ng$p$MultiobjectiveReference(), tuple(1.0, 1.0))
     } else {
@@ -1284,7 +1275,9 @@ f.mmm <- function(...
       decomp.rssd.collect <- c()
       best_mape <- Inf
       closeAllConnections()
-      registerDoParallel(listParam$set_cores)  #registerDoParallel(cores=listParam$set_cores)
+      registerDoParallel(listInput$set_cores)  #registerDoParallel(cores=listInput$set_cores)
+      #al <- makeCluster(listInput$set_cores)
+      #registerDoParallel(al)
       getDoParWorkers()
       doparCollect <- foreach (
         i = 1:iterPar
@@ -1365,7 +1358,7 @@ f.mmm <- function(...
         #trainSize <- round(nrow(dt_modSaturated)* set_modTrainSize)
         #dt_train <- dt_modSaturated[1:trainSize]
         #dt_test <- dt_modSaturated[(trainSize+1):nrow(dt_modSaturated)]
-        #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listParam$set_rollingWindowStartDate), units = "days")))
+        #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(listInput$set_rollingWindowStartDate), units = "days")))
         dt_train <- copy(dt_modSaturated)
         
         ## contrast matrix because glmnet does not treat categorical variables
@@ -1465,10 +1458,10 @@ f.mmm <- function(...
         if (!refresh) {
           decomp.rssd <- dt_decompSpendDist[, sqrt(sum((effect_share-spend_share)^2))]
         } else {
-          dt_decompRF <- decompCollect$xDecompAgg[, .(rn, xDecompPercRF)][xDecompAggPrev[, .(rn, xDecompPercRFPrev=xDecompPercRF)], on = "rn"]
-          decomp.rssd.nonmedia <- dt_decompRF[!(rn %in% set_mediaVarName), sqrt(sum((xDecompPercRF - xDecompPercRFPrev)^2))]
-          decomp.rssd.media <- dt_decompSpendDist[, sqrt(sum((effect_share_refresh-spend_share_refresh)^2))]
-          decomp.rssd <- decomp.rssd.media + decomp.rssd.nonmedia
+          dt_decompRF <- decompCollect$xDecompAgg[, .(rn, decomp_perc = xDecompPerc)][xDecompAggPrev[, .(rn, decomp_perc_prev=xDecompPerc)], on = "rn"]
+          decomp.rssd.nonmedia <- dt_decompRF[!(rn %in% set_mediaVarName), sqrt(mean((decomp_perc - decomp_perc_prev)^2))]
+          decomp.rssd.media <- dt_decompSpendDist[, sqrt(mean((effect_share_refresh-spend_share_refresh)^2))]
+          decomp.rssd <- decomp.rssd.media + decomp.rssd.nonmedia / (1- stepForward / rollingWindowLength)
         }
         
         if (is.nan(decomp.rssd)) {
@@ -1555,6 +1548,8 @@ f.mmm <- function(...
       } # end dopar
       ## end parallel
       
+      #stopCluster(al)
+      
       nrmse.collect <- sapply(doparCollect, function(x) x$nrmse)
       decomp.rssd.collect <- sapply(doparCollect, function(x) x$decomp.rssd)
       mape.lift.collect <- sapply(doparCollect, function(x) x$mape.lift)
@@ -1591,7 +1586,7 @@ f.mmm <- function(...
   
   if (fixed.out == F) {
     pareto_results <- data.table::transpose(rbind(as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$value[],4))),
-                                    as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$losses[],4)))))
+                                                  as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$losses[],4)))))
     if (nrow(set_lift)==0) {
       pareto_results_names<-setnames(pareto_results, old=names(pareto_results), new=c(hyper_bound_local_ng_name,"nrmse", "decomp.rssd") )
       pareto_results_ordered<-setorder(pareto_results_names, "nrmse", "decomp.rssd")
@@ -1603,7 +1598,7 @@ f.mmm <- function(...
   } else {
     pareto_results_ordered <- NULL
   }
-
+  
   #####################################
   #### Final result collect
   
@@ -1636,16 +1631,14 @@ f.mmm <- function(...
 
 
 #####################################
-#### Define f.robyn, the main trial looping and plotting function
+#### Define robyn_run, the main trial looping and plotting function
 
-
-f.robyn <- function(listParam = parent.frame()$listParam
-                    ,listDT = parent.frame()$listDT
-                    ,plot_folder = getwd() # plot_folder = "~/Documents/GitHub/plots"
-                    ,fixed.out = F
-                    ,dt_hyppar_fixed_inner = NULL # dt_hyppar_fixed_inner = dt_hyppar_fixed[solID == modID]
-                    ,pareto_fronts = 3
-                    ,refresh = F) {
+robyn_run <- function(listInput
+                       ,plot_folder = getwd() # plot_folder = "~/Documents/GitHub/plots"
+                       ,fixed.out = F
+                       ,dt_hyppar_fixed_inner = NULL # dt_hyppar_fixed_inner = dt_hyppar_fixed[solID == modID]
+                       ,pareto_fronts = 3
+                       ,refresh = F) {
   
   #####################################
   #### Set local environment
@@ -1657,21 +1650,21 @@ f.robyn <- function(listParam = parent.frame()$listParam
     message("provided plot_folder doesn't exist. Using default plot_folder = getwd(): ", getwd())
   }
   
-  dt_mod <- copy(listDT$dt_mod)
-  dt_modRollWind <- copy(listDT$dt_modRollWind)
+  dt_mod <- copy(listInput$dt_mod)
+  dt_modRollWind <- copy(listInput$dt_modRollWind)
   
-  message("Input data has ", nrow(dt_mod), " ", listParam$intervalType, "s in total: "
+  message("Input data has ", nrow(dt_mod), " ", listInput$intervalType, "s in total: "
           , dt_mod[, min(ds)], " to ", dt_mod[, max(ds)])
-  message(ifelse(!refresh, "Initial", "Refresh")," model is built on rolling window of ", listParam$rollingWindowLength, " ", listParam$intervalType,"s: "
-          , listParam$set_rollingWindowStartDate, " to ", listParam$set_rollingWindowEndDat)
-  if (refresh) {message("Rolling window moving forward: ", listParam$stepForward, " ", listParam$intervalType)}
+  message(ifelse(!refresh, "Initial", "Refresh")," model is built on rolling window of ", listInput$rollingWindowLength, " ", listInput$intervalType,"s: "
+          , listInput$set_rollingWindowStartDate, " to ", listInput$set_rollingWindowEndDat)
+  if (refresh) {message("Rolling window moving forward: ", listInput$stepForward, " ", listInput$intervalType)}
   
   
   #####################################
   #### Run f.mmm on set_trials
   
-  hyperparameter_fixed <- all(sapply(listParam$set_hyperBoundLocal, length)==1)
-  hypParamSamName <- f.getHyperNames()
+  hyperparameter_fixed <- all(sapply(listInput$set_hyperBoundLocal, length)==1)
+  hypParamSamName <- f.getHyperNames(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName)
   
   if (fixed.out == T) {
     
@@ -1684,7 +1677,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
     model_output_collect[[1]] <- f.mmm(dt_hyppar_fixed_inner[, hypParamSamName, with = F]
                                        #,set_iter = set_iter
                                        #,set_cores = set_cores
-                                       ,optimizer_name = listParam$set_hyperOptimAlgo
+                                       ,optimizer_name = listInput$set_hyperOptimAlgo
                                        ,fixed.out = T
                                        ,fixed.lambda = unlist(dt_hyppar_fixed_inner$lambda)
                                        ,refresh = refresh)
@@ -1707,7 +1700,8 @@ f.robyn <- function(listParam = parent.frame()$listParam
     
     ## Run f.mmm on set_trials if hyperparameters are all fixed
     model_output_collect <- list()
-    model_output_collect[[1]] <- f.mmm(listParam$set_hyperBoundLocal
+    model_output_collect[[1]] <- f.mmm(listInput$set_hyperBoundLocal
+                                       ,listInput = listInput
                                        ,set_iter = 1
                                        #,set_cores = 1
                                        #,optimizer_name = optimizer_name
@@ -1723,23 +1717,24 @@ f.robyn <- function(listParam = parent.frame()$listParam
     ## Run f.mmm on set_trials if hyperparameters are not all fixed
     
     ng_out <- list()
-    ng_algos <- listParam$set_hyperOptimAlgo # c("DoubleFastGADiscreteOnePlusOne", "DiscreteOnePlusOne", "TwoPointsDE", "DE")
+    ng_algos <- listInput$set_hyperOptimAlgo # c("DoubleFastGADiscreteOnePlusOne", "DiscreteOnePlusOne", "TwoPointsDE", "DE")
     
     t0 <- Sys.time()
     for (optmz in ng_algos) {
       ng_collect <- list()
       model_output_collect <- list()
       
-      for (ngt in 1:listParam$set_trial) { 
+      for (ngt in 1:listInput$set_trial) { 
         
-        if (nrow(listParam$set_lift)==0) {
-          cat("\nRunning trial nr.", ngt,"out of",listParam$set_trial,"...\n")
+        if (nrow(listInput$set_lift)==0) {
+          cat("\nRunning trial nr.", ngt,"out of",listInput$set_trial,"...\n")
         } else {
-          cat("\nRunning trial nr.", ngt,"out of",listParam$set_trial,"with calibration...\n")
+          cat("\nRunning trial nr.", ngt,"out of",listInput$set_trial,"with calibration...\n")
           
         }
         # rm(model_output)
-        model_output <- f.mmm(listParam$set_hyperBoundLocal
+        model_output <- f.mmm(listInput$set_hyperBoundLocal
+                              ,listInput = listInput
                               ,refresh = refresh
                               #,set_iter = set_iter
                               #,set_cores = set_cores
@@ -1750,15 +1745,15 @@ f.robyn <- function(listParam = parent.frame()$listParam
         check_coef0 <- any(model_output$resultCollect$decompSpendDist$decomp.rssd == Inf)
         if (check_coef0) {
           num_coef0_mod <- model_output$resultCollect$decompSpendDist[decomp.rssd == Inf, uniqueN(paste0(iterNG,"_",iterPar))]
-          num_coef0_mod <- ifelse(num_coef0_mod>listParam$set_iter, listParam$set_iter, num_coef0_mod)
+          num_coef0_mod <- ifelse(num_coef0_mod>listInput$set_iter, listInput$set_iter, num_coef0_mod)
           message("\nThis trial contains ", num_coef0_mod," iterations with all 0 media coefficient. Please reconsider your media variable choice if the pareto choices are unreasonable.
                   \nRecommendations are: \n1. increase hyperparameter ranges for 0-coef channels on theta (max.reco. c(0, 0.9) ) and gamma (max.reco. c(0.1, 1) ) to give Robyn more freedom\n2. split media into sub-channels, and/or aggregate similar channels, and/or introduce other media\n3. increase trials to get more samples\n")
         }
         
         model_output["trials"] <- ngt
-        ng_collect[[ngt]] <- model_output$resultCollect$paretoFront[, ':='(trials=ngt, iters = listParam$set_iter, ng_optmz = optmz)]
+        ng_collect[[ngt]] <- model_output$resultCollect$paretoFront[, ':='(trials=ngt, iters = listInput$set_iter, ng_optmz = optmz)]
         model_output_collect[[ngt]] <- model_output
-        #model_output_pareto <- f.mmm(listParam$set_hyperBoundLocal, out = T)
+        #model_output_pareto <- f.mmm(listInput$set_hyperBoundLocal, out = T)
       }
       ng_collect <- rbindlist(ng_collect)
       px <- low(ng_collect$nrmse) * low(ng_collect$decomp.rssd)
@@ -1776,15 +1771,15 @@ f.robyn <- function(listParam = parent.frame()$listParam
   
   ## collect hyperparameter results
   resultHypParam <- rbindlist(lapply(model_output_collect, function (x) x$resultCollect$resultHypParam[, trials:= x$trials]))
-  resultHypParam[, iterations:=(iterNG-1)*listParam$set_cores + iterPar]
+  resultHypParam[, iterations:=(iterNG-1)*listInput$set_cores + iterPar]
   xDecompAgg <- rbindlist(lapply(model_output_collect, function (x) x$resultCollect$xDecompAgg[, trials:= x$trials]))
-  xDecompAgg[, iterations:=(iterNG-1)*listParam$set_cores + iterPar]
+  xDecompAgg[, iterations:=(iterNG-1)*listInput$set_cores + iterPar]
   
   if (fixed.out != T) {
     resultHypParam[, solID:= (paste(trials,iterNG, iterPar, sep = "_"))]
     xDecompAgg[, solID:= (paste(trials,iterNG, iterPar, sep = "_"))]
   }
-  xDecompAggCoef0 <- xDecompAgg[rn %in% listParam$set_mediaVarName, .(coef0=min(coef)==0), by = "solID"]
+  xDecompAggCoef0 <- xDecompAgg[rn %in% listInput$set_mediaVarName, .(coef0=min(coef)==0), by = "solID"]
   
   if (!hyperparameter_fixed) {
     mape_lift_quantile10 <- quantile(resultHypParam$mape, probs = 0.10)
@@ -1812,7 +1807,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
   decompSpendDist <- rbindlist(lapply(model_output_collect, function (x) x$resultCollect$decompSpendDist[, trials:= x$trials]))
   decompSpendDist <- decompSpendDist[resultHypParam, robynPareto := i.robynPareto, on = c("iterNG", "iterPar", "trials")]
   if (fixed.out != T) {decompSpendDist[, solID:= (paste(trials,iterNG, iterPar, sep = "_"))]}
-  decompSpendDist <- decompSpendDist[xDecompAgg[rn %in% listParam$set_mediaVarName, .(rn, xDecompAgg, solID)], on = c("rn", "solID")]
+  decompSpendDist <- decompSpendDist[xDecompAgg[rn %in% listInput$set_mediaVarName, .(rn, xDecompAgg, solID)], on = c("rn", "solID")]
   resp_collect <- c()
   for (n in 1:length(decompSpendDist$rn)) {
     resp_collect[n] <- f.response(mediaVarName = decompSpendDist$rn[n]
@@ -1820,6 +1815,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
                                   ,Spend = decompSpendDist[n, mean_spend]
                                   ,dt_hyppar = resultHypParam
                                   ,dt_coef = xDecompAgg
+                                  ,listInput = listInput
     )
   }
   decompSpendDist[, mean_response:=resp_collect]
@@ -1836,7 +1832,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
   
   ## set folder to save plat
   if (!exists("plot_folder_sub")) {
-    folder_var <- ifelse(!refresh, "init", paste0("rf",listParamRefresh$refreshCounter))
+    folder_var <- ifelse(!refresh, "init", paste0("rf",listInput$refreshCounter))
     plot_folder_sub <- paste0(format(Sys.time(), "%Y-%m-%d %H.%M"), " ", folder_var)
     plotPath <- dir.create(file.path(plot_folder, plot_folder_sub))
   }
@@ -1860,10 +1856,10 @@ f.robyn <- function(listParam = parent.frame()$listParam
     
     ## plot prophet
     
-    if (!is.null(listParam$set_prophet)) {
-      # pProphet <- prophet_plot_components(listDT$modelRecurrance, listDT$forecastRecurrance, render_plot = T)
+    if (!is.null(listInput$set_prophet)) {
+      # pProphet <- prophet_plot_components(listInput$modelRecurrance, listInput$forecastRecurrance, render_plot = T)
       
-      dt_plotProphet <- listDT$dt_mod[, c('ds','depVar', listParam$set_prophet), with = F]
+      dt_plotProphet <- listInput$dt_mod[, c('ds','depVar', listInput$set_prophet), with = F]
       dt_plotProphet <- melt.data.table(dt_plotProphet, id.vars = 'ds')
       pProphet <- ggplot(dt_plotProphet, aes(x=ds, y=value)) + 
         geom_line(color='steelblue')+ 
@@ -1879,14 +1875,14 @@ f.robyn <- function(listParam = parent.frame()$listParam
     
     ## plot spend exposure model
     
-    if(any(listParam$costSelector)) {
-      pSpendExposure <- arrangeGrob(grobs = listParam$plotNLSCollect
-                                    ,ncol= ifelse(length(listParam$plotNLSCollect)<=3, length(listParam$plotNLSCollect), 3)
+    if(any(listInput$costSelector)) {
+      pSpendExposure <- arrangeGrob(grobs = listInput$plotNLSCollect
+                                    ,ncol= ifelse(length(listInput$plotNLSCollect)<=3, length(listInput$plotNLSCollect), 3)
                                     ,top = "Spend-exposure fitting with Michaelis-Menten model")
       #grid.draw(pSpendExposure)
       ggsave(paste0(plot_folder, "/", plot_folder_sub,"/", "spend_exposure_fitting.png")
              , plot = pSpendExposure
-             , dpi = 600, width = 12, height = ceiling(length(listParam$plotNLSCollect)/3)*7)
+             , dpi = 600, width = 12, height = ceiling(length(listInput$plotNLSCollect)/3)*7)
       
     } else {
       message("\nno spend-exposure modelling needed. all media variables used for mmm are spend variables ")
@@ -1895,14 +1891,14 @@ f.robyn <- function(listParam = parent.frame()$listParam
     
     ## plot hyperparameter sampling distribution
     
-    resultHypParam.melted <- melt.data.table(resultHypParam[, c(listParam$local_name,"robynPareto"), with = F], id.vars = c("robynPareto"))
+    resultHypParam.melted <- melt.data.table(resultHypParam[, c(listInput$local_name,"robynPareto"), with = F], id.vars = c("robynPareto"))
     
     pSamp <- ggplot(data = resultHypParam.melted,  aes( x = value, y=variable, color = variable, fill = variable) ) +
       geom_violin(alpha = .5, size = 0) +
       geom_point(size = 0.2) +
       theme(legend.position = "none") +
       labs(title="Model selection", 
-           subtitle=paste0("Hyperparameter pareto sample distribution", ", iterations = ", listParam$set_iter, " * ", listParam$set_trial, " trials"),
+           subtitle=paste0("Hyperparameter pareto sample distribution", ", iterations = ", listInput$set_iter, " * ", listInput$set_trial, " trials"),
            x="Hyperparameter space",
            y="")
     print(pSamp)
@@ -1921,7 +1917,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
       #geom_line(data = resultHypParam[robynPareto ==3], aes(x=nrmse, y=decomp.rssd), colour = "coral")+
       scale_colour_gradient(low = "navyblue", high = "skyblue") +
       labs(title="Model selection",
-           subtitle=paste0("2D Pareto front 1-3 with ",listParam$set_hyperOptimAlgo,", iterations = ", listParam$set_iter , " * ", listParam$set_trial, " trials"),
+           subtitle=paste0("2D Pareto front 1-3 with ",listInput$set_hyperOptimAlgo,", iterations = ", listInput$set_iter , " * ", listInput$set_trial, " trials"),
            x="NRMSE",
            y="DECOMP.RSSD")
     
@@ -1949,11 +1945,11 @@ f.robyn <- function(listParam = parent.frame()$listParam
   for (pf in paretoFronts) {
     
     if (!hyperparameter_fixed & fixed.out ==F) {
-      plotMediaShare <- xDecompAgg[robynPareto == pf & rn %in% listParam$set_mediaVarName]
+      plotMediaShare <- xDecompAgg[robynPareto == pf & rn %in% listInput$set_mediaVarName]
       plotWaterfall <- xDecompAgg[robynPareto == pf]
       uniqueSol <- plotMediaShare[, unique(solID)]
     } else {
-      plotMediaShare <- xDecompAgg[rn %in% listParam$set_mediaVarName]
+      plotMediaShare <- xDecompAgg[rn %in% listInput$set_mediaVarName]
       plotWaterfall <- copy(xDecompAgg)
       uniqueSol <- plotMediaShare[, unique(solID)]
     }
@@ -1966,10 +1962,10 @@ f.robyn <- function(listParam = parent.frame()$listParam
       rsq_train_plot <- plotMediaShareLoop[, round(unique(rsq_train),4)]
       nrmse_plot <- plotMediaShareLoop[, round(unique(nrmse),4)]
       decomp_rssd_plot <- plotMediaShareLoop[, round(unique(decomp.rssd),4)]
-      mape_lift_plot <- ifelse(!is.null(listParam$set_lift), plotMediaShareLoop[, round(unique(mape),4)], NA)
+      mape_lift_plot <- ifelse(!is.null(listInput$set_lift), plotMediaShareLoop[, round(unique(mape),4)], NA)
       
       plotMediaShareLoop <- melt.data.table(plotMediaShareLoop, id.vars = c("rn", "nrmse", "decomp.rssd", "rsq_train" ), measure.vars = c("spend_share", "effect_share", "roi"))
-      plotMediaShareLoop[, rn:= factor(rn, levels = sort(listParam$set_mediaVarName))]
+      plotMediaShareLoop[, rn:= factor(rn, levels = sort(listInput$set_mediaVarName))]
       plotMediaShareLoopBar <- plotMediaShareLoop[variable %in% c("spend_share", "effect_share")]
       plotMediaShareLoopBar[, variable:= ifelse(variable=="spend_share", "avg.spend share", "avg.effect share")]
       plotMediaShareLoopLine <- plotMediaShareLoop[variable =="roi"]
@@ -2023,67 +2019,67 @@ f.robyn <- function(listParam = parent.frame()$listParam
       
       resultHypParamLoop <- resultHypParam[solID == uniqueSol[j]]
       
-      hypParam <- unlist(resultHypParamLoop[, listParam$local_name, with =F])
-      dt_transformPlot <- dt_mod[, c("ds", listParam$set_mediaVarName), with =F] # independent variables
-      dt_transformSpend <- cbind(dt_transformPlot[,.(ds)], listDT$dt_input[, c(listParam$set_mediaSpendName), with =F]) # spends of indep vars
-      setnames(dt_transformSpend, names(dt_transformSpend), c("ds", listParam$set_mediaVarName))
+      hypParam <- unlist(resultHypParamLoop[, listInput$local_name, with =F])
+      dt_transformPlot <- dt_mod[, c("ds", listInput$set_mediaVarName), with =F] # independent variables
+      dt_transformSpend <- cbind(dt_transformPlot[,.(ds)], listInput$dt_input[, c(listInput$set_mediaSpendName), with =F]) # spends of indep vars
+      setnames(dt_transformSpend, names(dt_transformSpend), c("ds", listInput$set_mediaVarName))
       
       # update non-spend variables
-      dt_transformSpendMod <- dt_transformPlot[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich]
-      if (length(listParam$exposureVarName)>0) {
-        for (expo in listParam$exposureVarName) {
-          sel_nls <- ifelse(listParam$modNLSCollect[channel == expo, rsq_nls>rsq_lm],"nls","lm")
-          dt_transformSpendMod[, (expo):= listParam$yhatNLSCollect[channel==expo & models == sel_nls, yhat]]
+      dt_transformSpendMod <- dt_transformPlot[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
+      if (length(listInput$exposureVarName)>0) {
+        for (expo in listInput$exposureVarName) {
+          sel_nls <- ifelse(listInput$modNLSCollect[channel == expo, rsq_nls>rsq_lm],"nls","lm")
+          dt_transformSpendMod[, (expo):= listInput$yhatNLSCollect[channel==expo & models == sel_nls, yhat]]
         }
       }
       
       dt_transformAdstock <- copy(dt_transformPlot)
-      dt_transformSaturation <- dt_transformPlot[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich]
-      #chnl_non_spend <- listParam$set_mediaVarName[!(listParam$set_mediaVarName==listParam$set_mediaSpendName)]
+      dt_transformSaturation <- dt_transformPlot[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
+      #chnl_non_spend <- listInput$set_mediaVarName[!(listInput$set_mediaVarName==listInput$set_mediaSpendName)]
       
       m_decayRate <- list()
       
-      for (med in 1:listParam$mediaVarCount) {
+      for (med in 1:listInput$mediaVarCount) {
         
-        med_select <- listParam$set_mediaVarName[med]
+        med_select <- listInput$set_mediaVarName[med]
         m <- dt_transformPlot[, get(med_select)]
         
         
         ## adstocking
-        if (listParam$adstock == "geometric") {
+        if (listInput$adstock == "geometric") {
           
-          theta <- hypParam[paste0(listParam$set_mediaVarName[med], "_thetas")]
+          theta <- hypParam[paste0(listInput$set_mediaVarName[med], "_thetas")]
           x_list <- f.adstockGeometric(x=m, theta = theta)
           
-        } else if (listParam$adstock == "weibull") {
+        } else if (listInput$adstock == "weibull") {
           
-          shape <- hypParam[paste0(listParam$set_mediaVarName[med], "_shapes")]
-          scale <- hypParam[paste0(listParam$set_mediaVarName[med], "_scales")]
+          shape <- hypParam[paste0(listInput$set_mediaVarName[med], "_shapes")]
+          scale <- hypParam[paste0(listInput$set_mediaVarName[med], "_scales")]
           x_list <- f.adstockWeibull(x=m, shape = shape, scale = scale)
           
         }
         m_adstocked <- x_list$x_decayed
         dt_transformAdstock[, (med_select):= m_adstocked]
-        m_adstockedRollWind <- m_adstocked[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich]
+        m_adstockedRollWind <- m_adstocked[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
         
         ## saturation
-        alpha <- hypParam[paste0(listParam$set_mediaVarName[med], "_alphas")]
-        gamma <- hypParam[paste0(listParam$set_mediaVarName[med], "_gammas")]
+        alpha <- hypParam[paste0(listInput$set_mediaVarName[med], "_alphas")]
+        gamma <- hypParam[paste0(listInput$set_mediaVarName[med], "_gammas")]
         dt_transformSaturation[, (med_select):= f.hill(x=m_adstockedRollWind, alpha = alpha, gamma = gamma)] 
         
         m_decayRate[[med]] <- data.table(x_list$thetaVecCum)
-        setnames(m_decayRate[[med]], "V1", paste0(listParam$set_mediaVarName[med], "_decayRate"))
+        setnames(m_decayRate[[med]], "V1", paste0(listInput$set_mediaVarName[med], "_decayRate"))
         
       } 
       
       m_decayRate <- data.table(cbind(sapply(m_decayRate, function(x) sapply(x, function(y)y))))
-      setnames(m_decayRate, names(m_decayRate), listParam$set_mediaVarName)
-      m_decayRateSum <- m_decayRate[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName]
+      setnames(m_decayRate, names(m_decayRate), listInput$set_mediaVarName)
+      m_decayRateSum <- m_decayRate[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName]
       
       decayRate.melt <- suppressWarnings(melt.data.table(m_decayRateSum))
       
-      #decayRate.melt[, channel:=str_extract(decayRate.melt$variable, paste0(listParam$set_mediaVarName, collapse = "|"))]
-      #decayRate.melt[, variable:=str_replace(decayRate.melt$variable, paste0(paste0(listParam$set_mediaVarName,"_"), collapse = "|"), "")]
+      #decayRate.melt[, channel:=str_extract(decayRate.melt$variable, paste0(listInput$set_mediaVarName, collapse = "|"))]
+      #decayRate.melt[, variable:=str_replace(decayRate.melt$variable, paste0(paste0(listInput$set_mediaVarName,"_"), collapse = "|"), "")]
       
       ## get geometric reference
       decayVec <- seq(0, 0.9, by = 0.001)
@@ -2097,7 +2093,7 @@ f.robyn <- function(listParam = parent.frame()$listParam
         decayOut[i] <- decayVec[which.min(abs(decayRate.melt$value[i] - decayInfSum))]
       }
       decayRate.melt[, avg_decay_rate:= decayOut]
-      decayRate.melt[, variable:= factor(variable, levels = sort(listParam$set_mediaVarName))]
+      decayRate.melt[, variable:= factor(variable, levels = sort(listInput$set_mediaVarName))]
       
       p3 <- ggplot(decayRate.melt, aes(x=variable, y=avg_decay_rate, fill = "coral")) +
         geom_bar(stat = "identity", width = 0.5) +
@@ -2115,63 +2111,63 @@ f.robyn <- function(listParam = parent.frame()$listParam
       ## plot response curve
       
       dt_transformSaturationDecomp <- copy(dt_transformSaturation)
-      for (i in 1:listParam$mediaVarCount) {
-        coef <- plotWaterfallLoop[rn == listParam$set_mediaVarName[i], coef]
-        dt_transformSaturationDecomp[, (listParam$set_mediaVarName[i]):= .SD * coef, .SDcols = listParam$set_mediaVarName[i]]
+      for (i in 1:listInput$mediaVarCount) {
+        coef <- plotWaterfallLoop[rn == listInput$set_mediaVarName[i], coef]
+        dt_transformSaturationDecomp[, (listInput$set_mediaVarName[i]):= .SD * coef, .SDcols = listInput$set_mediaVarName[i]]
       }
       
-      #mediaAdstockFactorPlot <- dt_transformPlot[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName]  / dt_transformAdstock[, lapply(.SD, sum), .SDcols = listParam$set_mediaVarName]
-      #dt_transformSaturationAdstockReverse <- data.table(mapply(function(x, y) {x*y},x= dt_transformAdstock[, listParam$set_mediaVarName, with=F], y= mediaAdstockFactorPlot))
+      #mediaAdstockFactorPlot <- dt_transformPlot[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName]  / dt_transformAdstock[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName]
+      #dt_transformSaturationAdstockReverse <- data.table(mapply(function(x, y) {x*y},x= dt_transformAdstock[, listInput$set_mediaVarName, with=F], y= mediaAdstockFactorPlot))
       dt_transformSaturationSpendReverse <- copy(dt_transformAdstock)
       
-      for (i in 1:listParam$mediaVarCount) {
-        chn <- listParam$set_mediaVarName[i]
-        if (chn %in% listParam$set_mediaVarName[listParam$costSelector]) {
+      for (i in 1:listInput$mediaVarCount) {
+        chn <- listInput$set_mediaVarName[i]
+        if (chn %in% listInput$set_mediaVarName[listInput$costSelector]) {
           
           # get Michaelis Menten nls fitting param
           get_chn <- dt_transformSaturationSpendReverse[, chn, with =F]
-          Vmax <- listParam$modNLSCollect[channel == chn, Vmax]
-          Km <- listParam$modNLSCollect[channel == chn, Km]
+          Vmax <- listInput$modNLSCollect[channel == chn, Vmax]
+          Km <- listInput$modNLSCollect[channel == chn, Km]
           
           # reverse exposure to spend
           dt_transformSaturationSpendReverse[, (chn):= f.micMen(x=.SD, Vmax = Vmax, Km = Km, reverse = T), .SDcols = chn] # .SD * Km / (Vmax - .SD) exposure to spend, reverse Michaelis Menthen: x = y*Km/(Vmax-y)
           
-        } else if (chn %in% listParam$exposureVarName) {
-          coef_lm <- listParam$modNLSCollect[channel == chn, coef_lm]
+        } else if (chn %in% listInput$exposureVarName) {
+          coef_lm <- listInput$modNLSCollect[channel == chn, coef_lm]
           dt_transformSaturationSpendReverse[, (chn):= .SD/coef_lm, .SDcols = chn] 
         } 
         # spendRatioFitted <- xDecompAgg[rn == chn, mean(total_spend)] / dt_transformSaturationSpendReverse[, sum(.SD), .SDcols = chn]
         # dt_transformSaturationSpendReverse[, (chn):= .SD * spendRatioFitted, .SDcols = chn]
       }
       
-      dt_transformSaturationSpendReverse <- dt_transformSaturationSpendReverse[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich]
+      dt_transformSaturationSpendReverse <- dt_transformSaturationSpendReverse[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
       
       dt_scurvePlot <- cbind(melt.data.table(dt_transformSaturationDecomp, id.vars = "ds", variable.name = "channel",value.name = "response"),
                              melt.data.table(dt_transformSaturationSpendReverse, id.vars = "ds", value.name = "spend")[, .(spend)])
       dt_scurvePlot <- dt_scurvePlot[spend>=0] # remove outlier introduced by MM nls fitting
       
       
-      dt_scurvePlotMean <- dt_transformSpend[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich, !"ds"][, lapply(.SD, function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x>0])) ), .SDcols = listParam$set_mediaVarName]
-      dt_scurvePlotMean <- melt.data.table(dt_scurvePlotMean, measure.vars = listParam$set_mediaVarName, value.name = "mean_spend", variable.name = "channel")
+      dt_scurvePlotMean <- dt_transformSpend[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich, !"ds"][, lapply(.SD, function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x>0])) ), .SDcols = listInput$set_mediaVarName]
+      dt_scurvePlotMean <- melt.data.table(dt_scurvePlotMean, measure.vars = listInput$set_mediaVarName, value.name = "mean_spend", variable.name = "channel")
       dt_scurvePlotMean[, ':='(mean_spend_scaled=0, mean_response=0, next_unit_response=0)]
       
-      for (med in 1:listParam$mediaVarCount) {
+      for (med in 1:listInput$mediaVarCount) {
         
-        get_med <- listParam$set_mediaVarName[med]
+        get_med <- listInput$set_mediaVarName[med]
         get_spend <- dt_scurvePlotMean[channel == get_med, mean_spend]
         
-        if (get_med %in% listParam$set_mediaVarName[listParam$costSelector]) {
-          Vmax <- listParam$modNLSCollect[channel == get_med, Vmax]
-          Km <- listParam$modNLSCollect[channel == get_med, Km]
+        if (get_med %in% listInput$set_mediaVarName[listInput$costSelector]) {
+          Vmax <- listInput$modNLSCollect[channel == get_med, Vmax]
+          Km <- listInput$modNLSCollect[channel == get_med, Km]
           get_spend_mm <- f.micMen(x = get_spend, Vmax = Vmax, Km = Km) # Vmax * get_spend/(Km + get_spend)
-        } else if (get_med %in% listParam$exposureVarName) {
-          coef_lm <- listParam$modNLSCollect[channel == get_med, coef_lm]
+        } else if (get_med %in% listInput$exposureVarName) {
+          coef_lm <- listInput$modNLSCollect[channel == get_med, coef_lm]
           get_spend_mm <- get_spend*coef_lm
         } else {
           get_spend_mm <- get_spend
         }
         
-        m <- dt_transformAdstock[listParam$rollingWindowStartWhich:listParam$rollingWindowEndWhich, get(get_med)]
+        m <- dt_transformAdstock[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich, get(get_med)]
         # m <- m[m>0] # remove outlier introduced by MM nls fitting
         alpha <- hypParam[which(paste0(get_med, "_alphas")==names(hypParam))]
         gamma <- hypParam[which(paste0(get_med, "_gammas")==names(hypParam))]
@@ -2203,12 +2199,12 @@ f.robyn <- function(listParam = parent.frame()$listParam
       
       ## plot fitted vs actual
       
-      if(!is.null(listParam$set_prophet)) {
-        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName), with=F], dt_transformSaturation[, listParam$set_mediaVarName, with=F])
-        col_order <- c("ds", "depVar", listParam$set_prophet, listParam$set_baseVarName, listParam$set_mediaVarName)
+      if(!is.null(listInput$set_prophet)) {
+        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listInput$set_prophet, listInput$set_baseVarName), with=F], dt_transformSaturation[, listInput$set_mediaVarName, with=F])
+        col_order <- c("ds", "depVar", listInput$set_prophet, listInput$set_baseVarName, listInput$set_mediaVarName)
       } else {
-        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listParam$set_baseVarName), with=F], dt_transformSaturation[, listParam$set_mediaVarName, with=F])
-        col_order <- c("ds", "depVar", listParam$set_baseVarName, listParam$set_mediaVarName)
+        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listInput$set_baseVarName), with=F], dt_transformSaturation[, listInput$set_mediaVarName, with=F])
+        col_order <- c("ds", "depVar", listInput$set_baseVarName, listInput$set_mediaVarName)
       }
       setcolorder(dt_transformDecomp, neworder = col_order)
       
@@ -2303,21 +2299,25 @@ f.robyn <- function(listParam = parent.frame()$listParam
                      totalTime = totalTime,
                      plot_folder= paste0(plot_folder, "/", plot_folder_sub,"/"))
   
-  if (!refresh) {
-    assign("listOutput", listOutput, envir = .GlobalEnv)
-  } else {
-    assign("listOutputRefresh", listOutput, envir = .GlobalEnv)
-  }
-  #return(listOutput)
+  # if (!refresh) {
+  #   assign("listOutput", listOutput, envir = .GlobalEnv)
+  # } else {
+  #   assign("listOutputRefresh", listOutput, envir = .GlobalEnv)
+  # }
+  return(listOutput)
   
 }
 
-#####################################
-#### Define f.robyn.fixed, the function to load old model hyperparameters from csv
 
-f.robyn.fixed <- function(plot_folder = getwd()
-                          ,dt_hyppar_fixed = NULL
-                          ,modID = NULL) {
+
+
+
+#####################################
+#### Define robyn_run_fixed, the function to load old model hyperparameters from csv
+
+robyn_run_fixed <- function(plot_folder = getwd()
+                            ,dt_hyppar_fixed = NULL
+                            ,modID = NULL) {
   
   ## check condition
   if (!dir.exists(plot_folder)) {
@@ -2330,12 +2330,12 @@ f.robyn.fixed <- function(plot_folder = getwd()
       if (!(modID %in% dt_hyppar_fixed$solID)) {stop(paste0("modID please provide one of these values: ", paste(dt_hyppar_fixed$solID, collapse = ", ")))}
   if (nrow(dt_hyppar_fixed)==0) {stop("solID not included in fixed_hyppar_dt")}
   
-  ## run f.robyn
-  f.robyn(listParam = parent.frame()$listParam
-          ,listDT = parent.frame()$listDT
-          ,plot_folder = plot_folder
-          ,fixed.out = T
-          ,dt_hyppar_fixed_inner = dt_hyppar_fixed[solID == modID])
+  ## run model
+  robyn_run(listParam = parent.frame()$listParam
+            ,listDT = parent.frame()$listDT
+            ,plot_folder = plot_folder
+            ,fixed.out = T
+            ,dt_hyppar_fixed_inner = dt_hyppar_fixed[solID == modID])
 }
 
 
@@ -2346,19 +2346,20 @@ f.response <- function(mediaVarName = NULL
                        , Spend = NULL
                        , dt_hyppar = parent.frame()$listOutput$resultHypParam
                        , dt_coef = parent.frame()$listOutput$xDecompAgg
-                       , listDT = parent.frame()$listDT
-                       , listParam = parent.frame()$listParam
+                       , listInput = listInput
+                       # , listDT = parent.frame()$listDT
+                       # , listParam = parent.frame()$listParam
 ) {
   
   ## get input
-  dt_input = listDT$dt_input
-  set_mediaVarName = listParam$set_mediaVarName
-  set_mediaSpendName = listParam$set_mediaSpendName
-  startRW = listParam$rollingWindowStartWhich
-  endRW = listParam$rollingWindowEndWhich
-  adstock = listParam$adstock
+  dt_input = listInput$dt_input
+  set_mediaVarName = listInput$set_mediaVarName
+  set_mediaSpendName = listInput$set_mediaSpendName
+  startRW = listInput$rollingWindowStartWhich
+  endRW = listInput$rollingWindowEndWhich
+  adstock = listInput$adstock
   allSolutions = dt_hyppar[, unique(solID)]
-  spendExpoMod = listParam$modNLSCollect
+  spendExpoMod = listInput$modNLSCollect
   
   ## check inputs
   if (is.null(mediaVarName)) {
@@ -2380,7 +2381,7 @@ f.response <- function(mediaVarName = NULL
   
   
   ## transform spend to exposure if necessary
-  if (mediaVarName %in% listParam$exposureVarName) {
+  if (mediaVarName %in% listInput$exposureVarName) {
     
     # use non-0 mean spend as marginal level if Spend not provided
     if (is.null(Spend)) {
@@ -2436,19 +2437,19 @@ f.response <- function(mediaVarName = NULL
 
 
 
-f.saveInitMod <- function(initModPath
+robyn_save <- function(robyn_object
                           ,initModID
-                          ,modObjName = "Robyn"
-                          ,listDT = parent.frame()$listDT
-                          ,listOutput = parent.frame()$listOutput
-                          ,listParam = parent.frame()$listParam) {
-  
+                          ,listInput
+                          ,listOutput
+                          ) {
+
+
   if (!(initModID %in% listOutput$resultHypParam$solID)) {
     stop(paste0("initModID must be one of these values: ", paste(listOutput$resultHypParam$solID, collapse = ", ")))}
   
-  #initModPathFull <- paste0(initModPath, "/")
-  if (file.exists(initModPath)) {
-    answer <- askYesNo(paste0(initModPath, " already exists. Are you certain to overwrite it?")) 
+  #initModPathFull <- paste0(robyn_object, "/")
+  if (file.exists(robyn_object)) {
+    answer <- askYesNo(paste0(robyn_object, " already exists. Are you certain to overwrite it?")) 
     if(answer==F | is.na(answer)) {
       stop("stopped")
     }
@@ -2459,12 +2460,12 @@ f.saveInitMod <- function(initModPath
                      ,mediaVecCollect = listOutput$mediaVecCollect[solID == initModID]
                      ,xDecompVecCollect = listOutput$xDecompVecCollect[solID == initModID])
   
-  listParam$refreshCounter <- 0
+  listInput$refreshCounter <- 0
   #listParamInit <- listParam
-  listInit <- list(listOutput=listOutput, listParam=listParam, listDT=listDT)
+  listInit <- list(listOutput=listOutput, listInput=listInput)
   Robyn <- list(listInit=listInit)
   
-  save(Robyn, file = initModPath)
+  save(Robyn, file = robyn_object)
   #listOutputInit <- NULL;  listParamInit <- NULL 
   #load("/Users/gufengzhou/Documents/GitHub/plots/listInit.RData")
   
@@ -2473,245 +2474,242 @@ f.saveInitMod <- function(initModPath
 
 
 
-f.robyn.refresh <- function(initModPath
-                            ,dataPath = script_path
-                            ,plotPath = "~/Documents/GitHub/plots"
-                            ,data_csv_name
-                            ,holiday_csv_name
-                            ,stepForward = 4
-                            ,refreshMode = "manual" # "auto", "manual"
-                            ,refreshIter = 50
-                            ,refreshTrial = 3
-                            # ,listDT = parent.frame()$listDT
-                            # ,listParamInit = parent.frame()$listParamInit
-                            # ,listOutputInit = parent.frame()$listOutputInit
+robyn_refresh <- function(robyn_object
+                          ,dataPath = script_path
+                          # ,data_csv_name
+                          # ,holiday_csv_name
+                          ,dt_input = dt_input
+                          ,dt_holidays= dt_holidays
+                          ,stepForward = 4
+                          ,refreshMode = "manual" # "auto", "manual"
+                          ,refreshIter = 50
+                          ,refreshTrial = 2
+
 ) {
   
-  #dataPath <- substr(initModPath, start=1, stop=max(gregexpr("/",initModPath)[[1]]))
+  #dataPath <- substr(robyn_object, start=1, stop=max(gregexpr("/",robyn_object)[[1]]))
   refreshControl <- T
   while (refreshControl) {
-  
-  ## load inital model
-  #if(exists("listOutputRefresh")) {rm(listOutputRefresh, listParamRefresh, listDTRefresh)}
-  load(initModPath) # length(Robyn)
     
-  ## count refresh
-  refreshCounter <- length(Robyn)
-  objectCheck <- if (refreshCounter==1) {c("listInit")} else {c("listInit", paste0("listRefresh", 1:(refreshCounter-1)))} 
-  if (!all(objectCheck %in% names(Robyn))) {stop("Saved Robyn object is corrupted. It should contain ", paste(objectCheck, collapse = ",", ". Please rerun model."))}
-  
-  ## get previous data
-  if(refreshCounter==1) {
-    listName <- "listInit"
-    assign("listParamRefresh", Robyn[[listName]][["listParam"]])
-    assign("listOutputPrev", Robyn[[listName]][["listOutput"]])
-    message("\n###### initial model loaded ... ######")
-    if (length(unique(Robyn$listInit$listOutput$resultHypParam$solID))>1) {stop("Run f.saveInitMod first to select one initial model")}
+    ## load inital model
+    #if(exists("listOutputRefresh")) {rm(listOutputRefresh, listParamRefresh, listDTRefresh)}
+    load(robyn_object) 
+    objectName <-  substr(robyn_object, start = max(gregexpr("/|\\\\", robyn_object)[[1]])+1, stop = max(gregexpr("RData", robyn_object)[[1]])-2)
+    objectPath <- substr(robyn_object, start = 1, stop = max(gregexpr("/|\\\\", robyn_object)[[1]]))
+    Robyn <- get(objectName) 
     
-  } else {
-    listName <- paste0("listRefresh",refreshCounter-1)
-    assign("listParamRefresh", Robyn[[listName]][["listParamRefresh"]])
-    assign("listOutputPrev", Robyn[[listName]][["listOutputRefresh"]])
-    assign("listReportPrev", Robyn[[listName]][["listReport"]])
-    message(paste0("\n###### refresh model nr.",refreshCounter-1," loaded ... ######"))
+    ## count refresh
+    refreshCounter <- length(Robyn); refreshCounter
+    objectCheck <- if (refreshCounter==1) {c("listInit")} else {c("listInit", paste0("listRefresh", 1:(refreshCounter-1)))} 
+    if (!all(objectCheck %in% names(Robyn))) {stop("Saved Robyn object is corrupted. It should contain ", paste(objectCheck, collapse = ",", ". Please rerun model."))}
     
-    ## model selection from previous build
-    listOutputPrev$resultHypParam <- listOutputPrev$resultHypParam[bestModRF==T]
-    listOutputPrev$xDecompAgg <- listOutputPrev$xDecompAgg[bestModRF==T]
-    listOutputPrev$mediaVecCollect <- listOutputPrev$mediaVecCollect[bestModRF==T]
-    listOutputPrev$xDecompVecCollect <- listOutputPrev$xDecompVecCollect[bestModRF==T]
-  }
-  
-  #refreshCounter <- refreshCounter+1
-  listParamRefresh$refreshCounter <- refreshCounter
-  listParamRefresh$stepForward <- stepForward
-  
+    ## get previous data
+    if(refreshCounter==1) {
+      listInputRefresh <- Robyn$listInit$listInput
+      listOutputPrev <- Robyn$listInit$listOutput
+      listInputRefresh$xDecompAggPrev <- listOutputPrev$xDecompAgg
 
-  ## load refresh data
-  f.inputDT(data_csv_name = data_csv_name # input time series should be daily, weekly or monthly
-            , holiday_csv_name = holiday_csv_name # when using own holidays, please keep the header c("ds", "holiday", "country", "year")
-            , csv_path = dataPath
-            , refresh = T
-            , xDecompAggPrev = listOutputPrev$xDecompAgg)
-  dt_input <- listDTRefresh$dt_input
-  
-  #### update refresh model parameters
-  
-  ## refresh rolling window
-  totalDates <- as.Date(dt_input[, get(listParamRefresh$set_dateVarName)])
-  refreshStart <- as.Date(listParamRefresh$set_rollingWindowStartDate) + listParamRefresh$dayInterval * stepForward
-  refreshEnd <- as.Date(listParamRefresh$set_rollingWindowEndDate) + listParamRefresh$dayInterval * stepForward
-  listParamRefresh$refreshAddedStart <- as.Date(listParamRefresh$set_rollingWindowEndDate) + listParamRefresh$dayInterval 
-  listParamRefresh$set_rollingWindowStartDate <- refreshStart
-  listParamRefresh$set_rollingWindowEndDate <- refreshEnd
-  
-  refreshStartWhich <- which.min(abs(difftime(totalDates, as.Date(refreshStart), units = "days")))
-  refreshEndWhich <- which.min(abs(difftime(totalDates, as.Date(refreshEnd), units = "days")))
-  listParamRefresh$rollingWindowStartWhich <- refreshStartWhich
-  listParamRefresh$rollingWindowEndWhich <- refreshEndWhich
-  listParamRefresh$rollingWindowLength <- refreshEndWhich - refreshStartWhich +1
-  
-  if (refreshEnd > max(totalDates)) {stop("Not enough data for this refresh. Input data from date ", refreshEnd, " or later required")}
-  
-  if (refreshMode == "manual") {
-    refreshLooper <- 1
-    message("###### refreshing model nr.",refreshCounter, " in ", refreshMode, " mode ... ######")
-    refreshControl <- F
-  } else {
-    refreshLooper <- floor(as.numeric(difftime(max(totalDates), refreshEnd, units = "days")) / listParamRefresh$dayInterval / stepForward)
-    message("###### refreshing model nr.",refreshCounter, " in ",refreshMode," mode. ",refreshLooper," more to go ... ######")
-  }
-  
-  #### update refresh model parameters
-  
-  
-  ## refresh hyperparameter bounds
-  initBounds <- Robyn$listInit$listParam$set_hyperBoundLocal
-  initBoundsDis <- sapply(initBounds, function(x) return(x[2]-x[1]))
-  newBoundsFreedom <- stepForward/listParamRefresh$rollingWindowLength
-  
-  set_hyperBoundLocal <- listParamRefresh$set_hyperBoundLocal
-  hypNames <- names(set_hyperBoundLocal)
-  for (h in 1:length(hypNames))  {
-    getHyp <- listOutputPrev$resultHypParam[, get(hypNames[h])]
-    getDis <- initBoundsDis[hypNames[h]]
-    newLowB <- getHyp - getDis*newBoundsFreedom
-    if (newLowB< initBounds[hypNames[h]][[1]][1]) {newLowB <- initBounds[hypNames[h]][[1]][1]}
-    newUpB <- getHyp + getDis*newBoundsFreedom
-    if (newUpB> initBounds[hypNames[h]][[1]][2]) {newUpB <- initBounds[hypNames[h]][[1]][2]}
-    newBounds <- unname(c(newLowB, newUpB))
-    set_hyperBoundLocal[hypNames[h]][[1]] <- newBounds
-  }
-  listParamRefresh$set_hyperBoundLocal <- set_hyperBoundLocal
-  
-  ## refresh iterations and trials
-  listParamRefresh$set_iter <- refreshIter
-  listParamRefresh$set_trial <- refreshTrial
-  
-  #### update refresh model parameters
-  
-  ## feature engineering for refreshed data
-  f.featureEngineering(listDT = listDTRefresh, listParam = listParamRefresh, refresh = T)
-  
-  
-  ## refresh model with adjusted decomp.rssd
-  f.robyn(listParam = listParamRefresh
-          ,listDT = listDTRefresh
-          ,plot_folder = plotPath
-          ,pareto_fronts =1
-          ,refresh = T)
-  
-  ## select winner model for current refresh
-  # selectID <- listOutputRefresh$resultHypParam[which.min(decomp.rssd), solID] # min decomp.rssd selection
-  listOutputRefresh$resultHypParam[, error_dis:= sqrt(nrmse^2 + decomp.rssd^2)] # min error distance selection
-  selectID <- listOutputRefresh$resultHypParam[which.min(error_dis), solID]
-  listParamRefresh$selectID <- selectID
-  message("\nSelected model ID: ", selectID, " for refresh model nr.",refreshCounter," based on the smallest combined error of nrmse & decomp.rssd")
-  
-  listOutputRefresh$resultHypParam[, bestModRF:= solID == selectID]
-  listOutputRefresh$xDecompAgg[, bestModRF:= solID == selectID]
-  listOutputRefresh$mediaVecCollect[, bestModRF:= solID == selectID]
-  listOutputRefresh$xDecompVecCollect[, bestModRF:= solID == selectID]
-  
-  
-  #### result collect & save
-  if (refreshCounter==1) {
-    listOutputPrev$resultHypParam[, ':='(error_dis = sqrt(nrmse^2 + decomp.rssd^2), bestModRF = TRUE, refreshStatus=refreshCounter-1)]
-    listOutputPrev$xDecompAgg[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
-    listOutputPrev$mediaVecCollect[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
-    listOutputPrev$xDecompVecCollect[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
-    
-    
-    resultHypParamReport <- rbind(listOutputPrev$resultHypParam[bestModRF==T]
-                                  ,listOutputRefresh$resultHypParam[bestModRF==T][, refreshStatus:=refreshCounter])
-    xDecompAggReport <- rbind(listOutputPrev$xDecompAgg[bestModRF==T]
-                              ,listOutputRefresh$xDecompAgg[bestModRF==T][, refreshStatus:=refreshCounter])
-    mediaVecReport <- rbind(listOutputPrev$mediaVecCollect[bestModRF==T & ds>=(refreshStart- listParamRefresh$dayInterval * stepForward) & ds <= (refreshEnd- listParamRefresh$dayInterval * stepForward)]
-                                   ,listOutputRefresh$mediaVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
-    mediaVecReport <- mediaVecReport[order(type, ds, refreshStatus)]
-    xDecompVecReport <- rbind(listOutputPrev$xDecompVecCollect[bestModRF==T]
-                              ,listOutputRefresh$xDecompVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
-  } else {
-    
-    resultHypParamReport <- rbind(listReportPrev$resultHypParamReport, listOutputRefresh$resultHypParam[bestModRF==T][, refreshStatus:=refreshCounter])
-    xDecompAggReport <- rbind(listReportPrev$xDecompAggReport, listOutputRefresh$xDecompAgg[bestModRF==T][, refreshStatus:=refreshCounter])
-    mediaVecReport <- rbind(listReportPrev$mediaVecReport
-                                   , listOutputRefresh$mediaVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
-    mediaVecReport <- mediaVecReport[order(type, ds, refreshStatus)]
-    xDecompVecReport <- rbind(listReportPrev$xDecompVecReport
-                              ,listOutputRefresh$xDecompVecCollect[bestModRF==T & ds>=listParamRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
-  }
-  
-  fwrite(resultHypParamReport, paste0(listOutputRefresh$plot_folder, "report_hyperparameters.csv"))
-  fwrite(xDecompAggReport, paste0(listOutputRefresh$plot_folder, "report_aggregated.csv"))
-  fwrite(mediaVecReport, paste0(listOutputRefresh$plot_folder, "report_media_transform_matrix.csv"))
-  fwrite(xDecompVecReport, paste0(listOutputRefresh$plot_folder, "report_alldecomp_matrix.csv"))
-  
-  
-  #### reporting plots
-  xDecompVecReportPlot <- copy(xDecompVecReport)
-  xDecompVecReportPlot[, ':='(refreshStart = min(ds)
-                          ,refreshEnd = max(ds)), by = "refreshStatus"]
-  xDecompVecReportPlot[, duration:= as.numeric((refreshEnd-refreshStart)/listParamRefresh$dayInterval)]
-  getRefreshStarts <- sort(unique(xDecompVecReportPlot$refreshStart))[-1]
-  dt_refreshDates <- unique(xDecompVecReportPlot[, .(refreshStatus=as.factor(refreshStatus), refreshStart, refreshEnd, duration)])
-  dt_refreshDates[, label:= ifelse(dt_refreshDates$refreshStatus==0
-                                   , paste0("initial: ", dt_refreshDates$refreshStart, ", ", dt_refreshDates$duration, listParamRefresh$intervalType, "s")
-                                   , paste0("refresh nr.", dt_refreshDates$refreshStatus,": ",dt_refreshDates$refreshStart, ", ", dt_refreshDates$duration, listParamRefresh$intervalType, "s"))]
-  
-  # xDecompVecReportPlot <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-18 11.51 rf2/report_alldecomp_matrix.csv")
-  
-  xDecompVecReportMelted <- melt.data.table(xDecompVecReportPlot[, .(ds, refreshStart, refreshEnd, refreshStatus, actual=depVar, predicted=depVarHat)] , id.vars = c("ds", "refreshStatus","refreshStart", "refreshEnd"))
-  pFitRF <- ggplot(data=xDecompVecReportMelted) +
-    geom_line(aes(x = ds, y = value, color = variable))+
-    geom_rect(data = dt_refreshDates, aes(xmin = refreshStart, xmax = refreshEnd, fill = refreshStatus)
-              , ymin = -Inf, ymax = Inf, alpha = 0.2) +
-    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-          panel.background = element_blank() ,# legend.position = c(0.1, 0.8), 
-          legend.background = element_rect(fill=alpha('white', 0.4)),
-          ) +
-    scale_fill_brewer(palette = 'BuGn') +
-    geom_text(data = dt_refreshDates, mapping=aes(x=refreshStart, y=max(xDecompVecReportMelted$value), label=label
-                                                  , angle=270, hjust=-0.1, vjust=-0.2), color = "gray40" )+
-    #geom_vline(xintercept = getRefreshStarts, linetype="dotted") + 
-    labs(title="Model refresh: actual vs. predicted response"
-         ,subtitle = paste0("Assembled rsq: ", round(f.rsq(true=xDecompVecReportPlot$depVar, predicted=xDecompVecReportPlot$depVarHat),2)
-                            #,"\nRefresh dates: ", paste(getRefreshStarts, collapse = ", ")
-                            )
-         ,x="date" ,y="response")
-  print(pFitRF)
+      message("\n###### initial model loaded ... ######")
+      if (length(unique(Robyn$listInit$listOutput$resultHypParam$solID))>1) {stop("Run robyn_save first to select one initial model")}
+      
+    } else {
+      listName <- paste0("listRefresh",refreshCounter-1)
+      listInputRefresh <- Robyn[[listName]][["listInputRefresh"]]
+      listOutputPrev <- Robyn[[listName]][["listOutputRefresh"]]
+      listReportPrev <- Robyn[[listName]][["listReport"]]
 
-  ggsave(filename=paste0(listOutputRefresh$plot_folder,"report_actual_fitted.png")
-         , plot = pFitRF
-         , dpi = 600, width = 9, height = 6)
-  
-  
-  #### save result objects
-  
-  listReport <- list(resultHypParamReport=resultHypParamReport
-                     ,xDecompAggReport=xDecompAggReport
-                     ,mediaVecReport=mediaVecReport
-                     ,xDecompVecReport=xDecompVecReport)
-  assign("listReport", listReport)
-
-  listHolder<- list(listDTRefresh=listDTRefresh
-                    ,listParamRefresh=listParamRefresh
-                    ,listOutputRefresh=listOutputRefresh
-                    ,listReport=listReport)
-  
-  
-  listNameUpdate <- paste0("listRefresh",refreshCounter)
-  assign(listNameUpdate, listHolder)
-  Robyn[[listNameUpdate]] <- listHolder
-  
-  save(Robyn, file = initModPath)
-  
-  if(refreshLooper==0) {
-    refreshControl <- F
-    message("reached maximum available date. no further refresh possible")}
+      message(paste0("\n###### refresh model nr.",refreshCounter-1," loaded ... ######"))
+      
+      ## model selection from previous build
+      listOutputPrev$resultHypParam <- listOutputPrev$resultHypParam[bestModRF==T]
+      listOutputPrev$xDecompAgg <- listOutputPrev$xDecompAgg[bestModRF==T]
+      listOutputPrev$mediaVecCollect <- listOutputPrev$mediaVecCollect[bestModRF==T]
+      listOutputPrev$xDecompVecCollect <- listOutputPrev$xDecompVecCollect[bestModRF==T]
+    }
+    
+    listInputRefresh$refreshCounter <- refreshCounter
+    listInputRefresh$stepForward <- stepForward
+    if (stepForward >= listInputRefresh$rollingWindowLength) {stop("Refresh input data is completely new. Please rebuild model using robyn_run")}
+    
+    
+    ## load new data
+    
+    listInputRefresh$dt_input <- dt_input
+    listInputRefresh$dt_holidays <- dt_holidays
+    
+    #### update refresh model parameters
+    
+    ## refresh rolling window
+    totalDates <- as.Date(dt_input[, get(listInputRefresh$set_dateVarName)])
+    refreshStart <- as.Date(listInputRefresh$set_rollingWindowStartDate) + listInputRefresh$dayInterval * stepForward
+    refreshEnd <- as.Date(listInputRefresh$set_rollingWindowEndDate) + listInputRefresh$dayInterval * stepForward
+    listInputRefresh$refreshAddedStart <- as.Date(listInputRefresh$set_rollingWindowEndDate) + listInputRefresh$dayInterval 
+    listInputRefresh$set_rollingWindowStartDate <- refreshStart
+    listInputRefresh$set_rollingWindowEndDate <- refreshEnd
+    
+    refreshStartWhich <- which.min(abs(difftime(totalDates, as.Date(refreshStart), units = "days")))
+    refreshEndWhich <- which.min(abs(difftime(totalDates, as.Date(refreshEnd), units = "days")))
+    listInputRefresh$rollingWindowStartWhich <- refreshStartWhich
+    listInputRefresh$rollingWindowEndWhich <- refreshEndWhich
+    listInputRefresh$rollingWindowLength <- refreshEndWhich - refreshStartWhich +1
+    
+    if (refreshEnd > max(totalDates)) {stop("Not enough data for this refresh. Input data from date ", refreshEnd, " or later required")}
+    
+    if (refreshMode == "manual") {
+      refreshLooper <- 1
+      message("###### refreshing model nr.",refreshCounter, " in ", refreshMode, " mode ... ######")
+      refreshControl <- F
+    } else {
+      refreshLooper <- floor(as.numeric(difftime(max(totalDates), refreshEnd, units = "days")) / listInputRefresh$dayInterval / stepForward)
+      message("###### refreshing model nr.",refreshCounter, " in ",refreshMode," mode. ",refreshLooper," more to go ... ######")
+    }
+    
+    #### update refresh model parameters
+    
+    
+    ## refresh hyperparameter bounds
+    initBounds <- Robyn$listInit$listInput$set_hyperBoundLocal
+    initBoundsDis <- sapply(initBounds, function(x) return(x[2]-x[1]))
+    newBoundsFreedom <- stepForward/listInputRefresh$rollingWindowLength
+    
+    set_hyperBoundLocal <- listInputRefresh$set_hyperBoundLocal
+    hypNames <- names(set_hyperBoundLocal)
+    for (h in 1:length(hypNames))  {
+      getHyp <- listOutputPrev$resultHypParam[, get(hypNames[h])]
+      getDis <- initBoundsDis[hypNames[h]]
+      newLowB <- getHyp - getDis*newBoundsFreedom
+      if (newLowB< initBounds[hypNames[h]][[1]][1]) {newLowB <- initBounds[hypNames[h]][[1]][1]}
+      newUpB <- getHyp + getDis*newBoundsFreedom
+      if (newUpB> initBounds[hypNames[h]][[1]][2]) {newUpB <- initBounds[hypNames[h]][[1]][2]}
+      newBounds <- unname(c(newLowB, newUpB))
+      set_hyperBoundLocal[hypNames[h]][[1]] <- newBounds
+    }
+    listInputRefresh$set_hyperBoundLocal <- set_hyperBoundLocal
+    
+    ## refresh iterations and trials
+    listInputRefresh$set_iter <- refreshIter
+    listInputRefresh$set_trial <- refreshTrial
+    
+    #### update refresh model parameters
+    
+    ## feature engineering for refreshed data
+    listInputRefresh <- robyn_engineering(listInput = listInputRefresh)
+    
+    
+    ## refresh model with adjusted decomp.rssd
+    
+    listOutputRefresh <- robyn_run(listInput = listInputRefresh, plot_folder = "~/Documents/GitHub/plots", pareto_fronts =1, refresh = T)
+    
+    ## select winner model for current refresh
+    # selectID <- listOutputRefresh$resultHypParam[which.min(decomp.rssd), solID] # min decomp.rssd selection
+    listOutputRefresh$resultHypParam[, error_dis:= sqrt(nrmse^2 + decomp.rssd^2)] # min error distance selection
+    selectID <- listOutputRefresh$resultHypParam[which.min(error_dis), solID]
+    listInputRefresh$selectID <- selectID
+    message("\nSelected model ID: ", selectID, " for refresh model nr.",refreshCounter," based on the smallest combined error of nrmse & decomp.rssd")
+    
+    listOutputRefresh$resultHypParam[, bestModRF:= solID == selectID]
+    listOutputRefresh$xDecompAgg[, bestModRF:= solID == selectID]
+    listOutputRefresh$mediaVecCollect[, bestModRF:= solID == selectID]
+    listOutputRefresh$xDecompVecCollect[, bestModRF:= solID == selectID]
+    
+    
+    #### result collect & save
+    if (refreshCounter==1) {
+      listOutputPrev$resultHypParam[, ':='(error_dis = sqrt(nrmse^2 + decomp.rssd^2), bestModRF = TRUE, refreshStatus=refreshCounter-1)]
+      listOutputPrev$xDecompAgg[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
+      listOutputPrev$mediaVecCollect[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
+      listOutputPrev$xDecompVecCollect[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
+      
+      
+      resultHypParamReport <- rbind(listOutputPrev$resultHypParam[bestModRF==T]
+                                    ,listOutputRefresh$resultHypParam[bestModRF==T][, refreshStatus:=refreshCounter])
+      xDecompAggReport <- rbind(listOutputPrev$xDecompAgg[bestModRF==T]
+                                ,listOutputRefresh$xDecompAgg[bestModRF==T][, refreshStatus:=refreshCounter])
+      mediaVecReport <- rbind(listOutputPrev$mediaVecCollect[bestModRF==T & ds>=(refreshStart- listInputRefresh$dayInterval * stepForward) & ds <= (refreshEnd- listInputRefresh$dayInterval * stepForward)]
+                              ,listOutputRefresh$mediaVecCollect[bestModRF==T & ds>=listInputRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+      mediaVecReport <- mediaVecReport[order(type, ds, refreshStatus)]
+      xDecompVecReport <- rbind(listOutputPrev$xDecompVecCollect[bestModRF==T]
+                                ,listOutputRefresh$xDecompVecCollect[bestModRF==T & ds>=listInputRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+    } else {
+      
+      resultHypParamReport <- rbind(listReportPrev$resultHypParamReport, listOutputRefresh$resultHypParam[bestModRF==T][, refreshStatus:=refreshCounter])
+      xDecompAggReport <- rbind(listReportPrev$xDecompAggReport, listOutputRefresh$xDecompAgg[bestModRF==T][, refreshStatus:=refreshCounter])
+      mediaVecReport <- rbind(listReportPrev$mediaVecReport
+                              , listOutputRefresh$mediaVecCollect[bestModRF==T & ds>=listInputRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+      mediaVecReport <- mediaVecReport[order(type, ds, refreshStatus)]
+      xDecompVecReport <- rbind(listReportPrev$xDecompVecReport
+                                ,listOutputRefresh$xDecompVecCollect[bestModRF==T & ds>=listInputRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+    }
+    
+    fwrite(resultHypParamReport, paste0(listOutputRefresh$plot_folder, "report_hyperparameters.csv"))
+    fwrite(xDecompAggReport, paste0(listOutputRefresh$plot_folder, "report_aggregated.csv"))
+    fwrite(mediaVecReport, paste0(listOutputRefresh$plot_folder, "report_media_transform_matrix.csv"))
+    fwrite(xDecompVecReport, paste0(listOutputRefresh$plot_folder, "report_alldecomp_matrix.csv"))
+    
+    
+    #### reporting plots
+    xDecompVecReportPlot <- copy(xDecompVecReport)
+    xDecompVecReportPlot[, ':='(refreshStart = min(ds)
+                                ,refreshEnd = max(ds)), by = "refreshStatus"]
+    xDecompVecReportPlot[, duration:= as.numeric((refreshEnd-refreshStart)/listInputRefresh$dayInterval)]
+    getRefreshStarts <- sort(unique(xDecompVecReportPlot$refreshStart))[-1]
+    dt_refreshDates <- unique(xDecompVecReportPlot[, .(refreshStatus=as.factor(refreshStatus), refreshStart, refreshEnd, duration)])
+    dt_refreshDates[, label:= ifelse(dt_refreshDates$refreshStatus==0
+                                     , paste0("initial: ", dt_refreshDates$refreshStart, ", ", dt_refreshDates$duration, listInputRefresh$intervalType, "s")
+                                     , paste0("refresh nr.", dt_refreshDates$refreshStatus,": ",dt_refreshDates$refreshStart, ", ", dt_refreshDates$duration, listInputRefresh$intervalType, "s"))]
+    
+    # xDecompVecReportPlot <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-18 11.51 rf2/report_alldecomp_matrix.csv")
+    
+    xDecompVecReportMelted <- melt.data.table(xDecompVecReportPlot[, .(ds, refreshStart, refreshEnd, refreshStatus, actual=depVar, predicted=depVarHat)] , id.vars = c("ds", "refreshStatus","refreshStart", "refreshEnd"))
+    pFitRF <- ggplot(data=xDecompVecReportMelted) +
+      geom_line(aes(x = ds, y = value, color = variable))+
+      geom_rect(data = dt_refreshDates, aes(xmin = refreshStart, xmax = refreshEnd, fill = refreshStatus)
+                , ymin = -Inf, ymax = Inf, alpha = 0.2) +
+      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+            panel.background = element_blank() ,# legend.position = c(0.1, 0.8), 
+            legend.background = element_rect(fill=alpha('white', 0.4)),
+      ) +
+      scale_fill_brewer(palette = 'BuGn') +
+      geom_text(data = dt_refreshDates, mapping=aes(x=refreshStart, y=max(xDecompVecReportMelted$value), label=label
+                                                    , angle=270, hjust=-0.1, vjust=-0.2), color = "gray40" )+
+      #geom_vline(xintercept = getRefreshStarts, linetype="dotted") + 
+      labs(title="Model refresh: actual vs. predicted response"
+           ,subtitle = paste0("Assembled rsq: ", round(f.rsq(true=xDecompVecReportPlot$depVar, predicted=xDecompVecReportPlot$depVarHat),2)
+                              #,"\nRefresh dates: ", paste(getRefreshStarts, collapse = ", ")
+           )
+           ,x="date" ,y="response")
+    print(pFitRF)
+    
+    ggsave(filename=paste0(listOutputRefresh$plot_folder,"report_actual_fitted.png")
+           , plot = pFitRF
+           , dpi = 600, width = 9, height = 6)
+    
+    
+    #### save result objects
+    
+    listReport <- list(resultHypParamReport=resultHypParamReport
+                       ,xDecompAggReport=xDecompAggReport
+                       ,mediaVecReport=mediaVecReport
+                       ,xDecompVecReport=xDecompVecReport)
+    #assign("listReport", listReport)
+    
+    listHolder<- list(listInputRefresh=listInputRefresh
+                      ,listOutputRefresh=listOutputRefresh
+                      ,listReport=listReport)
+    
+    
+    listNameUpdate <- paste0("listRefresh",refreshCounter)
+    #assign(listNameUpdate, listHolder)
+    Robyn[[listNameUpdate]] <- listHolder
+    
+    save(Robyn, file = robyn_object)
+    
+    if(refreshLooper==0) {
+      refreshControl <- F
+      message("reached maximum available date. no further refresh possible")}
   }
   
-  #save(listDTRefresh, listDTRefresh, file = initModPath)
+  #save(listDTRefresh, listDTRefresh, file = robyn_object)
 }
 
 f.loadLibrary <- function() {
@@ -2723,5 +2721,7 @@ f.loadLibrary <- function() {
     if (require(l, character.only = T)) {} else {install.packages(l)}
   }
 }
+
+
 
 

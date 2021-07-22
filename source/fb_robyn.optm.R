@@ -6,7 +6,8 @@
 ################################################################
 #### Define optimiser function
 
-f.budgetAllocator <- function(modID = NULL
+robyn_allocator <- function(listInput
+                              ,modID = NULL
                               ,optim_algo = "MMA_AUGLAG"
                               ,expected_spend = NULL
                               ,expected_spend_days = NULL
@@ -15,8 +16,10 @@ f.budgetAllocator <- function(modID = NULL
                               ,scenario = "max_historical_response"
                               ,maxeval = 100000
                               ,constr_mode = "eq"
-                              ,listParam = parent.frame()$listParam
-                              ,listDT = parent.frame()$listDT) {
+                              
+                              # ,listParam = parent.frame()$listParam
+                              # ,listDT = parent.frame()$listDT
+                              ) {
   
   #####################################
   #### Set local environment
@@ -35,21 +38,21 @@ f.budgetAllocator <- function(modID = NULL
   }
   
   if (length(channel_constr_up)!=1) {
-    if (length(channel_constr_low)!= length(listParam$set_mediaVarName) | length(channel_constr_up)!= length(listParam$set_mediaVarName)) {
-      stop("channel_constr_low & channel_constr_up have to contain either only 1 value or have same length as listParam$set_mediaVarName")
+    if (length(channel_constr_low)!= length(listInput$set_mediaVarName) | length(channel_constr_up)!= length(listInput$set_mediaVarName)) {
+      stop("channel_constr_low & channel_constr_up have to contain either only 1 value or have same length as listInput$set_mediaVarName")
     }
   }
   
   ## get dt 
   dt_bestHyperParam <- listOutput$resultHypParam[solID == modID]
   if (!(modID %in% dt_bestHyperParam$solID)) {stop("provided modID is not within the best results")}
-  dt_bestCoef <- listOutput$xDecompAgg[solID == modID & rn %in% listParam$set_mediaVarName]
+  dt_bestCoef <- listOutput$xDecompAgg[solID == modID & rn %in% listInput$set_mediaVarName]
   
-  dt_spendShare <- listDT$dt_input[listDT$dt_input[, rank(.SD), .SDcols = listParam$set_dateVarName]]
-  dt_spendShare <- dt_spendShare[, .(rn = listParam$set_mediaVarName,
-                                     total_spend = sapply(.SD, sum)), .SDcols=listParam$set_mediaSpendName]
+  dt_spendShare <- listInput$dt_input[listInput$dt_input[, rank(.SD), .SDcols = listInput$set_dateVarName]]
+  dt_spendShare <- dt_spendShare[, .(rn = listInput$set_mediaVarName,
+                                     total_spend = sapply(.SD, sum)), .SDcols=listInput$set_mediaSpendName]
   dt_bestCoef[dt_spendShare[, .(rn, total_spend)], ':='(spend = i.total_spend, roi = xDecompAgg / i.total_spend), on = "rn"]
-  dt_optim <- copy(listDT$dt_mod)
+  dt_optim <- copy(listInput$dt_mod)
   
   ## get filter for channels mmm coef reduced to 0
   dt_coef <- dt_bestCoef[, .(rn, coef)]
@@ -59,10 +62,10 @@ f.budgetAllocator <- function(modID = NULL
   names(coefSelectorSorted) <- dt_coefSorted$rn
   
   ## filter and sort all variables by name that is essential for the apply function later
-  channelNames <- sort(listParam$set_mediaVarName)
+  channelNames <- sort(listInput$set_mediaVarName)
   channelNames <- channelNames[coefSelectorSorted]
   if(!all(coefSelectorSorted)) {
-    chn_coef0 <- setdiff(listParam$set_mediaVarName, channelNames)
+    chn_coef0 <- setdiff(listInput$set_mediaVarName, channelNames)
     message(paste(chn_coef0, collapse = ", "), " are excluded in optimiser because their coeffients are 0")
   }
   
@@ -72,18 +75,18 @@ f.budgetAllocator <- function(modID = NULL
   dt_optim <- dt_optim[, channelNames, with = F]
   setcolorder(dt_optim, sort(names(dt_optim)))
   
-  dt_optimCost <- copy(listDT$dt_input)
-  dt_optimCost <- dt_optimCost[, listParam$set_mediaSpendName, with = F]
-  names(dt_optimCost) <- listParam$set_mediaVarName
+  dt_optimCost <- copy(listInput$dt_input)
+  dt_optimCost <- dt_optimCost[, listInput$set_mediaSpendName, with = F]
+  names(dt_optimCost) <- listInput$set_mediaVarName
   #dt_optimCost <- dt_optimCost[, channelNames, with=F]
   setcolorder(dt_optimCost, channelNames)
   
   dt_bestCoef <- dt_bestCoef[order(rank(rn))][rn %in% channelNames]
   
-  costMultiplierVec <- listParam$mediaCostFactor[channelNames]
+  costMultiplierVec <- listInput$mediaCostFactor[channelNames]
   
-  if(any(listParam$costSelector)) {
-    dt_modNLS <- merge(data.table(channel=channelNames), listParam$modNLSCollect, all.x = T, by = "channel")
+  if(any(listInput$costSelector)) {
+    dt_modNLS <- merge(data.table(channel=channelNames), listInput$modNLSCollect, all.x = T, by = "channel")
     vmaxVec <- dt_modNLS[order(rank(channel))][, Vmax]
     names(vmaxVec) <- channelNames
     kmVec <- dt_modNLS[order(rank(channel))][, Km]
@@ -93,19 +96,19 @@ f.budgetAllocator <- function(modID = NULL
     kmVec <- rep(0, length(channelNames))
   }
   
-  #names(listParam$costSelector) <- listParam$set_mediaVarName
-  costSelectorSorted <- listParam$costSelector[order(listParam$set_mediaVarName)]
+  #names(listInput$costSelector) <- listInput$set_mediaVarName
+  costSelectorSorted <- listInput$costSelector[order(listInput$set_mediaVarName)]
   costSelectorSorted <- costSelectorSorted[coefSelectorSorted]
   costSelectorSorted <- costSelectorSorted[channelNames]
   
-  names(channel_constr_low) <- listParam$set_mediaVarName; names(channel_constr_up) <- listParam$set_mediaVarName
-  channelConstrLowSorted <- channel_constr_low[order(listParam$set_mediaVarName)][coefSelectorSorted]
-  channelConstrUpSorted <- channel_constr_up[order(listParam$set_mediaVarName)][coefSelectorSorted]
+  names(channel_constr_low) <- listInput$set_mediaVarName; names(channel_constr_up) <- listInput$set_mediaVarName
+  channelConstrLowSorted <- channel_constr_low[order(listInput$set_mediaVarName)][coefSelectorSorted]
+  channelConstrUpSorted <- channel_constr_up[order(listInput$set_mediaVarName)][coefSelectorSorted]
   
   ## get adstock parameters for each channel
-  if (listParam$adstock == "geometric") {
+  if (listInput$adstock == "geometric") {
     getAdstockHypPar <- unlist(dt_bestHyperParam[, .SD, .SDcols = na.omit(str_extract(names(dt_bestHyperParam),".*_thetas"))])
-  } else if (listParam$adstock == "weibull") {
+  } else if (listInput$adstock == "weibull") {
     getAdstockHypPar <- unlist(dt_bestHyperParam[, .SD, .SDcols = na.omit(str_extract(names(dt_bestHyperParam),".*_shapes|.*_scales"))])
   }
   
@@ -119,20 +122,20 @@ f.budgetAllocator <- function(modID = NULL
     gamma <- hillHypParVec[str_which(names(hillHypParVec), paste0(chnl, "_gammas"))]
     chnRaw <- unlist(dt_optim[, chnl, with =F])
     
-    if (listParam$adstock == "geometric") {
+    if (listInput$adstock == "geometric") {
       chnAdstocked <- f.transformation(chnRaw
                                        ,theta = getAdstockHypPar[str_which(names(getAdstockHypPar), chnl)]
                                        ,alpha = alpha
                                        ,gamma = gamma
-                                       ,alternative = listParam$adstock
+                                       ,alternative = listInput$adstock
                                        ,stage = 2)
-    } else if (listParam$adstock == "weibull") {
+    } else if (listInput$adstock == "weibull") {
       chnAdstocked <- f.transformation(chnRaw
                                        ,shape = getAdstockHypPar[str_which(names(getAdstockHypPar), paste0(chnl, "_shapes"))]
                                        ,scale = getAdstockHypPar[str_which(names(getAdstockHypPar), paste0(chnl, "_scales"))]
                                        ,alpha = alpha
                                        ,gamma = gamma
-                                       ,alternative = listParam$adstock
+                                       ,alternative = listInput$adstock
                                        ,stage = 2)
     }
     
@@ -151,9 +154,9 @@ f.budgetAllocator <- function(modID = NULL
   coefs <- dt_bestCoef[,coef]; names(coefs) <- dt_bestCoef[,rn]
   
   ## build evaluation funciton
-  if(any(listParam$costSelector)) {
-    mm_lm_coefs <- listParam$modNLSCollect$coef_lm
-    names(mm_lm_coefs) <- listParam$modNLSCollect$channel
+  if(any(listInput$costSelector)) {
+    mm_lm_coefs <- listInput$modNLSCollect$coef_lm
+    names(mm_lm_coefs) <- listInput$modNLSCollect$channel
   } else {
     mm_lm_coefs <- c()
   }
@@ -255,7 +258,7 @@ f.budgetAllocator <- function(modID = NULL
   
   ## build contraints function with scenarios
   nPeriod <- nrow(dt_optimCost)
-  xDecompAggMedia <- listOutput$xDecompAgg[solID==modID & rn %in% listParam$set_mediaVarName][order(rank(rn))]
+  xDecompAggMedia <- listOutput$xDecompAgg[solID==modID & rn %in% listInput$set_mediaVarName][order(rank(rn))]
   
   if (scenario == "max_historical_response") {
     expected_spend <- sum(xDecompAggMedia$total_spend)
@@ -266,11 +269,11 @@ f.budgetAllocator <- function(modID = NULL
     if (any(is.null(expected_spend), is.null(expected_spend_days))) {
       stop("when scenario = 'max_response_expected_spend', expected_spend and expected_spend_days must be provided")
     }
-    expSpendUnitTotal <- expected_spend / (expected_spend_days / listParam$dayInterval)
+    expSpendUnitTotal <- expected_spend / (expected_spend_days / listInput$dayInterval)
   }
   
   histSpend <- xDecompAggMedia[,.(rn, total_spend)]
-  histSpend <- histSpend$total_spend; names(histSpend) <- sort(listParam$set_mediaVarName)
+  histSpend <- histSpend$total_spend; names(histSpend) <- sort(listInput$set_mediaVarName)
   #histSpend <- colSums(dt_optimCost)
   histSpendTotal <- sum(histSpend)
   histSpendUnitTotal <- sum(xDecompAggMedia$mean_spend) # histSpendTotal/ nPeriod
@@ -456,11 +459,11 @@ f.budgetAllocator <- function(modID = NULL
   
   ## response curve
   
-  plotDT_saturation <- melt.data.table(listOutput$mediaVecCollect[solID==modID & type == "saturatedSpendReversed"], id.vars = "ds", measure.vars = listParam$set_mediaVarName, value.name = "spend", variable.name = "channel")
-  plotDT_decomp <- melt.data.table(listOutput$mediaVecCollect[solID==modID & type == "decompMedia"], id.vars = "ds", measure.vars = listParam$set_mediaVarName, value.name = "response", variable.name = "channel")
+  plotDT_saturation <- melt.data.table(listOutput$mediaVecCollect[solID==modID & type == "saturatedSpendReversed"], id.vars = "ds", measure.vars = listInput$set_mediaVarName, value.name = "spend", variable.name = "channel")
+  plotDT_decomp <- melt.data.table(listOutput$mediaVecCollect[solID==modID & type == "decompMedia"], id.vars = "ds", measure.vars = listInput$set_mediaVarName, value.name = "response", variable.name = "channel")
   plotDT_scurve <- cbind(plotDT_saturation, plotDT_decomp[, .(response)])
   plotDT_scurve <- plotDT_scurve[spend>=0] # remove outlier introduced by MM nls fitting
-  plotDT_scurveMeanResponse <- listOutput$xDecompAgg[solID==modID & rn %in% listParam$set_mediaVarName]
+  plotDT_scurveMeanResponse <- listOutput$xDecompAgg[solID==modID & rn %in% listInput$set_mediaVarName]
   dt_optimOutScurve <- rbind(dt_optimOut[, .(channels, initSpendUnit, initResponseUnit)][, type:="initial"], dt_optimOut[, .(channels, optmSpendUnit, optmResponseUnit)][, type:="optimised"], use.names = F)
   setnames(dt_optimOutScurve, c("channels", "spend", "response", "type"))
   
@@ -499,9 +502,9 @@ f.budgetAllocator <- function(modID = NULL
   
   fwrite(dt_optimOut, paste0(listOutput$folder_path, modID,"_reallocated.csv"))
   
-  listOutputAllocator <- list(dt_optimOut=dt_optimOut, nlsMod=nlsMod)
-  assign("listOutputAllocator", listOutputAllocator, envir = .GlobalEnv)
-  #return(listOutputAllocator)
+  listAllocator <- list(dt_optimOut=dt_optimOut, nlsMod=nlsMod)
+  #assign("listOutputAllocator", listAllocator, envir = .GlobalEnv)
+  return(listAllocator)
 }
 
 
