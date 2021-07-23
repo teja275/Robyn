@@ -1634,7 +1634,7 @@ f.mmm <- function(...
 #### Define robyn_run, the main trial looping and plotting function
 
 robyn_run <- function(listInput
-                       ,plot_folder = getwd() # plot_folder = "~/Documents/GitHub/plots"
+                       ,plot_folder = getwd() 
                        ,fixed.out = F
                        ,dt_hyppar_fixed_inner = NULL # dt_hyppar_fixed_inner = dt_hyppar_fixed[solID == modID]
                        ,pareto_fronts = 3
@@ -1645,6 +1645,13 @@ robyn_run <- function(listInput
   
   t0 <- Sys.time()
   
+  # check path 
+  if (tolower(substr(plot_folder, start = nchar(plot_folder)-5, stop = nchar(plot_folder)))==".rdata") {
+    plot_folder <- substr(plot_folder, start = 1, stop = max(gregexpr("/|\\\\", plot_folder)[[1]])-1)
+  } else if (grepl("^/$|^\\\\$", substr(plot_folder, start=nchar(plot_folder), stop=nchar(plot_folder)))) {
+    plot_folder <- substr(plot_folder, start = 1, stop = max(gregexpr("/|\\\\", plot_folder)[[1]])-1)
+  } 
+
   if (!dir.exists(plot_folder)) {
     plot_folder <- getwd()
     message("provided plot_folder doesn't exist. Using default plot_folder = getwd(): ", getwd())
@@ -2475,7 +2482,6 @@ robyn_save <- function(robyn_object
 
 
 robyn_refresh <- function(robyn_object
-                          ,dataPath = script_path
                           # ,data_csv_name
                           # ,holiday_csv_name
                           ,dt_input = dt_input
@@ -2487,7 +2493,6 @@ robyn_refresh <- function(robyn_object
 
 ) {
   
-  #dataPath <- substr(robyn_object, start=1, stop=max(gregexpr("/",robyn_object)[[1]]))
   refreshControl <- T
   while (refreshControl) {
     
@@ -2514,8 +2519,8 @@ robyn_refresh <- function(robyn_object
       
     } else {
       listName <- paste0("listRefresh",refreshCounter-1)
-      listInputRefresh <- Robyn[[listName]][["listInputRefresh"]]
-      listOutputPrev <- Robyn[[listName]][["listOutputRefresh"]]
+      listInputRefresh <- Robyn[[listName]][["listInput"]]
+      listOutputPrev <- Robyn[[listName]][["listOutput"]]
       listReportPrev <- Robyn[[listName]][["listReport"]]
 
       message(paste0("\n###### refresh model nr.",refreshCounter-1," loaded ... ######"))
@@ -2598,7 +2603,7 @@ robyn_refresh <- function(robyn_object
     
     ## refresh model with adjusted decomp.rssd
     
-    listOutputRefresh <- robyn_run(listInput = listInputRefresh, plot_folder = "~/Documents/GitHub/plots", pareto_fronts =1, refresh = T)
+    listOutputRefresh <- robyn_run(listInput = listInputRefresh, plot_folder = objectPath, pareto_fronts =1, refresh = T)
     
     ## select winner model for current refresh
     # selectID <- listOutputRefresh$resultHypParam[which.min(decomp.rssd), solID] # min decomp.rssd selection
@@ -2651,13 +2656,13 @@ robyn_refresh <- function(robyn_object
     xDecompVecReportPlot <- copy(xDecompVecReport)
     xDecompVecReportPlot[, ':='(refreshStart = min(ds)
                                 ,refreshEnd = max(ds)), by = "refreshStatus"]
-    xDecompVecReportPlot[, duration:= as.numeric((refreshEnd-refreshStart)/listInputRefresh$dayInterval)]
+    xDecompVecReportPlot[, duration:= as.numeric((refreshEnd-refreshStart+listInputRefresh$dayInterval)/listInputRefresh$dayInterval)]
     getRefreshStarts <- sort(unique(xDecompVecReportPlot$refreshStart))[-1]
     dt_refreshDates <- unique(xDecompVecReportPlot[, .(refreshStatus=as.factor(refreshStatus), refreshStart, refreshEnd, duration)])
     dt_refreshDates[, label:= ifelse(dt_refreshDates$refreshStatus==0
                                      , paste0("initial: ", dt_refreshDates$refreshStart, ", ", dt_refreshDates$duration, listInputRefresh$intervalType, "s")
                                      , paste0("refresh nr.", dt_refreshDates$refreshStatus,": ",dt_refreshDates$refreshStart, ", ", dt_refreshDates$duration, listInputRefresh$intervalType, "s"))]
-    
+    dt_refreshDates
     # xDecompVecReportPlot <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-18 11.51 rf2/report_alldecomp_matrix.csv")
     
     xDecompVecReportMelted <- melt.data.table(xDecompVecReportPlot[, .(ds, refreshStart, refreshEnd, refreshStatus, actual=depVar, predicted=depVarHat)] , id.vars = c("ds", "refreshStatus","refreshStart", "refreshEnd"))
@@ -2693,8 +2698,8 @@ robyn_refresh <- function(robyn_object
                        ,xDecompVecReport=xDecompVecReport)
     #assign("listReport", listReport)
     
-    listHolder<- list(listInputRefresh=listInputRefresh
-                      ,listOutputRefresh=listOutputRefresh
+    listHolder<- list(listInput=listInputRefresh
+                      ,listOutput=listOutputRefresh
                       ,listReport=listReport)
     
     

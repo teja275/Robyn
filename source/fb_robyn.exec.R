@@ -50,11 +50,11 @@ use_condaenv("r-reticulate")
 
 dt_input <- fread(paste0(script_path, "de_simulated_data.csv"))
 dt_holidays <- fread(paste0(script_path, "holidays.csv"))
-
+robyn_object <- "/Users/gufengzhou/Documents/robyn_dev_output/Robyn.RData"
 registerDoSEQ(); detectCores()
 
 ################################################################
-#### set model input variables
+#### set model input & feature engineering
 
 listInput <- robyn_inputs(dt_input = dt_input
                          ,dt_holidays = dt_holidays
@@ -97,10 +97,10 @@ listInput <- robyn_inputs(dt_input = dt_input
                          
                          ## set model core features
                          ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
-                         ,set_iter = 50  # number of allowed iterations per trial. 500 is recommended
+                         ,set_iter = 100  # number of allowed iterations per trial. 500 is recommended
                          
                          ,set_hyperOptimAlgo = "DiscreteOnePlusOne" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
-                         ,set_trial = 2 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
+                         ,set_trial = 1 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
                          ## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
                          
                          ################################################################
@@ -160,29 +160,22 @@ listInput <- robyn_inputs(dt_input = dt_input
                          
 )
 
-listOutput <- robyn_run(listInput = listInput, plot_folder = "~/Documents/GitHub/plots", pareto_fronts =3)
-
 
 ## helper plots: set plot to TRUE for transformation examples
 plot_adstock(F) # adstock transformation example plot, helping you understand geometric/theta and weibull/shape/scale transformation
 plot_saturation(F) # s-curve transformation example plot, helping you understand hill/alpha/gamma transformation
 
-################################################################
-#### Prepare input data
-
-#f.featureEngineering()
 
 ################################################################
 #### Run models
 
-#robyn_run(plot_folder = "~/Documents/GitHub/plots", pareto_fronts =3) # please set your folder path to save plots. It ends without "/".
+listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, pareto_fronts =3)
 
 
 ######################### NOTE: must run f.saveInitMod to select and save ONE model first, before refreshing below
 ## save selected model
 listOutput$allSolutions
-robyn_object <- "/Users/gufengzhou/Documents/robyn_dev_output/Robyn.RData"
-robyn_save(robyn_object = robyn_object, initModID = "1_3_3", listInput = listInput, listOutput = listOutput)
+robyn_save(robyn_object = robyn_object, initModID = "1_16_4", listInput = listInput, listOutput = listOutput)
 # load("/Users/gufengzhou/Documents/GitHub/plots/listInit.RData")
 
 ## reload old models from csv
@@ -198,7 +191,7 @@ robyn_save(robyn_object = robyn_object, initModID = "1_3_3", listInput = listInp
 
 listOutput$allSolutions
 listAllocator <- robyn_allocator(listInput
-                                 ,modID = "1_3_3" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+                                 ,modID = "1_16_4" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
                                  ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
                                  ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                                  #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
@@ -216,16 +209,13 @@ listAllocator <- robyn_allocator(listInput
 source(paste(script_path, "fb_robyn.func.R", sep=""))
 source(paste(script_path, "fb_robyn.optm.R", sep=""))
 
-# robyn_object = "/Users/gufengzhou/Documents/GitHub/plots/Robyn.RData";dataPath = script_path;data_csv_name = "de_simulated_data.csv"; holiday_csv_name = "holidays.csv";stepForward = 3; refreshMode = "manual"; refreshIter = 50 ; refreshTrial = 3; plotPath = "~/Documents/GitHub/plots"
-
 robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
-              , dataPath = script_path
               , dt_input = dt_input
               , dt_holidays = dt_holidays
               , stepForward = 13 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
               , refreshMode = "manual" # "auto" means the refresh function will move forward until no more data available
-              , refreshIter = 50 # iteration for refresh
-              , refreshTrial = 2 # trial for refresh
+              , refreshIter = 100 # iteration for refresh
+              , refreshTrial = 1 # trial for refresh
 )
 
 ######## Please check plot output folders. The following 4 reporting CSVs are new and accummulated result with all previous refreshes ...
