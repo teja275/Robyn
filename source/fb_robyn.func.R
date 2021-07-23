@@ -1817,12 +1817,12 @@ robyn_run <- function(listInput
   decompSpendDist <- decompSpendDist[xDecompAgg[rn %in% listInput$set_mediaVarName, .(rn, xDecompAgg, solID)], on = c("rn", "solID")]
   resp_collect <- c()
   for (n in 1:length(decompSpendDist$rn)) {
-    resp_collect[n] <- f.response(mediaVarName = decompSpendDist$rn[n]
-                                  ,modID = decompSpendDist[n, solID]
-                                  ,Spend = decompSpendDist[n, mean_spend]
-                                  ,dt_hyppar = resultHypParam
-                                  ,dt_coef = xDecompAgg
-                                  ,listInput = listInput
+    resp_collect[n] <- robyn_response(mediaVarName = decompSpendDist$rn[n]
+                                      ,modID = decompSpendDist[n, solID]
+                                      ,Spend = decompSpendDist[n, mean_spend]
+                                      ,dt_hyppar = resultHypParam
+                                      ,dt_coef = xDecompAgg
+                                      ,listInput = listInput
     )
   }
   decompSpendDist[, mean_response:=resp_collect]
@@ -2348,17 +2348,39 @@ robyn_run_fixed <- function(plot_folder = getwd()
 
 
 
-f.response <- function(mediaVarName = NULL
-                       , modID = NULL
-                       , Spend = NULL
-                       , dt_hyppar = parent.frame()$listOutput$resultHypParam
-                       , dt_coef = parent.frame()$listOutput$xDecompAgg
-                       , listInput = listInput
-                       # , listDT = parent.frame()$listDT
-                       # , listParam = parent.frame()$listParam
+robyn_response <- function(robyn_object = NULL
+                           , select_run = NULL
+                           , mediaVarName = NULL
+                           , modID = NULL
+                           , Spend = NULL
+                           , dt_hyppar = NULL # listOutput$resultHypParam
+                           , dt_coef = NULL # listOutput$xDecompAgg
+                           , listInput = NULL# listInput
+
 ) {
   
   ## get input
+  if (!is.null(robyn_object)) {
+    if (is.null(select_run)) {stop("when providing robyn_object, must specify which model run as input 0, 1, 2, 3... while 0 means initial model")} 
+    load(robyn_object)
+    objectName <-  substr(robyn_object, start = max(gregexpr("/|\\\\", robyn_object)[[1]])+1, stop = max(gregexpr("RData", robyn_object)[[1]])-2)
+    objectPath <- substr(robyn_object, start = 1, stop = max(gregexpr("/|\\\\", robyn_object)[[1]]))
+    Robyn <- get(objectName) 
+    
+    select_run_all <- 0:(length(Robyn)-1)
+    if (!(select_run %in% select_run_all) | length(select_run) !=1) {stop("select_run must be one value of ", paste(select_run_all, collapse = ", "))}
+    
+    listName <- ifelse(select_run == 0, "listInit", paste0("listRefresh",select_run))
+    listInput <- Robyn[[listName]][["listInput"]]
+    listOutput <- Robyn[[listName]][["listOutput"]]
+    dt_hyppar <- listOutput$resultHypParam
+    dt_coef <- listOutput$xDecompAgg
+    modID <- listOutput$selectID
+    
+  } else if (any(is.null(dt_hyppar), is.null(dt_coef), is.null(listInput))) {
+    stop("when robyn_object is not provided, then dt_hyppar = listOutput$resultHypParam, dt_coef = listOutput$xDecompAgg and listInput must be provided")
+  }
+  
   dt_input = listInput$dt_input
   set_mediaVarName = listInput$set_mediaVarName
   set_mediaSpendName = listInput$set_mediaSpendName
@@ -2439,7 +2461,7 @@ f.response <- function(mediaVarName = NULL
   coeff <- dt_coef[solID == modID & rn == mediaVarName, coef]
   Response <- Saturated * coeff
   
-  return(Response)
+  return(as.numeric(Response))
 }
 
 
@@ -2462,10 +2484,11 @@ robyn_save <- function(robyn_object
     }
   }
   
-  listOutput <- list(resultHypParam = listOutput$resultHypParam[solID == initModID]
-                     ,xDecompAgg = listOutput$xDecompAgg[solID == initModID]
-                     ,mediaVecCollect = listOutput$mediaVecCollect[solID == initModID]
-                     ,xDecompVecCollect = listOutput$xDecompVecCollect[solID == initModID])
+  listOutput$resultHypParam = listOutput$resultHypParam[solID == initModID]
+  listOutput$xDecompAgg = listOutput$xDecompAgg[solID == initModID]
+  listOutput$mediaVecCollect = listOutput$mediaVecCollect[solID == initModID]
+  listOutput$xDecompVecCollect = listOutput$xDecompVecCollect[solID == initModID]
+  listOutput$selectID = initModID
   
   listInput$refreshCounter <- 0
   #listParamInit <- listParam
@@ -2609,7 +2632,7 @@ robyn_refresh <- function(robyn_object
     # selectID <- listOutputRefresh$resultHypParam[which.min(decomp.rssd), solID] # min decomp.rssd selection
     listOutputRefresh$resultHypParam[, error_dis:= sqrt(nrmse^2 + decomp.rssd^2)] # min error distance selection
     selectID <- listOutputRefresh$resultHypParam[which.min(error_dis), solID]
-    listInputRefresh$selectID <- selectID
+    listOutputRefresh$selectID <- selectID
     message("\nSelected model ID: ", selectID, " for refresh model nr.",refreshCounter," based on the smallest combined error of nrmse & decomp.rssd")
     
     listOutputRefresh$resultHypParam[, bestModRF:= solID == selectID]
@@ -2715,6 +2738,7 @@ robyn_refresh <- function(robyn_object
   }
   
   #save(listDTRefresh, listDTRefresh, file = robyn_object)
+  invisible(Robyn)
 }
 
 f.loadLibrary <- function() {

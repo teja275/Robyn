@@ -175,7 +175,7 @@ listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, paret
 ######################### NOTE: must run f.saveInitMod to select and save ONE model first, before refreshing below
 ## save selected model
 listOutput$allSolutions
-robyn_save(robyn_object = robyn_object, initModID = "1_16_4", listInput = listInput, listOutput = listOutput)
+robyn_save(robyn_object = robyn_object, initModID = "1_16_6", listInput = listInput, listOutput = listOutput)
 # load("/Users/gufengzhou/Documents/GitHub/plots/listInit.RData")
 
 ## reload old models from csv
@@ -190,8 +190,11 @@ robyn_save(robyn_object = robyn_object, initModID = "1_16_4", listInput = listIn
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
 listOutput$allSolutions
+listOutput$xDecompAgg[solID == "1_16_6" & !is.na(mean_spend), .(rn, mean_spend, mean_response, roi)]
+
 listAllocator <- robyn_allocator(listInput
-                                 ,modID = "1_16_4" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+                                 ,listOutput
+                                 ,modID = "1_16_6" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
                                  ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
                                  ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                                  #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
@@ -200,6 +203,15 @@ listAllocator <- robyn_allocator(listInput
                                  ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
 )
 
+## QA optimal response
+select_media <- "facebook_I"
+optimal_spend <- listAllocator$dt_optimOut[channels== select_media, optmSpendUnit]
+optimal_response_allocator <- listAllocator$dt_optimOut[channels== select_media, optmResponseUnit]
+optimal_response <- robyn_response(robyn_object = robyn_object
+                                   , select_run = 0
+                                   , mediaVarName = select_media
+                                   , Spend = optimal_spend)
+round(optimal_response_allocator) == round(optimal_response)
 
 ################################################################
 #### Model refresh - Alpha
@@ -209,13 +221,13 @@ listAllocator <- robyn_allocator(listInput
 source(paste(script_path, "fb_robyn.func.R", sep=""))
 source(paste(script_path, "fb_robyn.optm.R", sep=""))
 
-robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
-              , dt_input = dt_input
-              , dt_holidays = dt_holidays
-              , stepForward = 13 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
-              , refreshMode = "manual" # "auto" means the refresh function will move forward until no more data available
-              , refreshIter = 100 # iteration for refresh
-              , refreshTrial = 1 # trial for refresh
+Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
+                       , dt_input = dt_input
+                       , dt_holidays = dt_holidays
+                       , stepForward = 13 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
+                       , refreshMode = "auto" # "auto" means the refresh function will move forward until no more data available
+                       , refreshIter = 100 # iteration for refresh
+                       , refreshTrial = 1 # trial for refresh
 )
 
 ######## Please check plot output folders. The following 4 reporting CSVs are new and accummulated result with all previous refreshes ...
@@ -229,18 +241,24 @@ length(Robyn);names(Robyn)
 Robyn$listRefresh1 <- NULL
 save(Robyn, file = robyn_object)
 
-
 ################################################################
 #### get marginal returns
-# Spend <- 1000
-# Response <- f.response(mediaVarName = "facebook_I", modID = "1_3_6", Spend = Spend) 
-# Response/Spend
-# 
-# Spend1 <- 1001
-# Response1 <- f.response(mediaVarName = "facebook_I", modID = "1_3_6", Spend = Spend1) 
-# Response1/Spend1
-# 
-# Response1-Response
+Robyn$listRefresh2$listReport$xDecompAggReport[, .(refreshStatus, rn, mean_spend, mean_response, roi)]
+
+Spend <- 80000
+Response <- robyn_response(robyn_object = robyn_object
+                           , select_run = 2
+                           , mediaVarName = "search_clicks_P"
+                           , Spend = Spend)
+Response/Spend
+
+Spend1 <- Spend+1
+Response1 <- robyn_response(robyn_object = robyn_object
+                            , select_run = 2
+                            , mediaVarName = "search_clicks_P"
+                            , Spend = Spend1)
+Response1/Spend1
+Response1-Response
 
 
 remotes::install_github("laresbernardo/Robyn")

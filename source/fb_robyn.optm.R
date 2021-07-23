@@ -7,19 +7,17 @@
 #### Define optimiser function
 
 robyn_allocator <- function(listInput
-                              ,modID = NULL
-                              ,optim_algo = "MMA_AUGLAG"
-                              ,expected_spend = NULL
-                              ,expected_spend_days = NULL
-                              ,channel_constr_low = 0.5
-                              ,channel_constr_up = 2
-                              ,scenario = "max_historical_response"
-                              ,maxeval = 100000
-                              ,constr_mode = "eq"
-                              
-                              # ,listParam = parent.frame()$listParam
-                              # ,listDT = parent.frame()$listDT
-                              ) {
+                            ,listOutput
+                            ,modID = NULL
+                            ,optim_algo = "MMA_AUGLAG"
+                            ,expected_spend = NULL
+                            ,expected_spend_days = NULL
+                            ,channel_constr_low = 0.5
+                            ,channel_constr_up = 2
+                            ,scenario = "max_historical_response"
+                            ,maxeval = 100000
+                            ,constr_mode = "eq"
+) {
   
   #####################################
   #### Set local environment
@@ -30,7 +28,28 @@ robyn_allocator <- function(listInput
   
   cat("\nRunning budget allocator for model ID", modID, "...\n")
   
+  
+  ## get data 
+  dt_input = listInput$dt_input
+  dt_mod <- listInput$dt_mod
+  set_mediaVarName = listInput$set_mediaVarName
+  media_order <- order(set_mediaVarName)
+  set_mediaSpendName = listInput$set_mediaSpendName
+  mediaVarSorted <- set_mediaVarName[media_order]
+  mediaSpendSorted <- set_mediaSpendName[media_order]
+  exposureVarName <- listInput$exposureVarName
+  startRW = listInput$rollingWindowStartWhich
+  endRW = listInput$rollingWindowEndWhich
+  adstock = listInput$adstock
+  spendExpoMod = listInput$modNLSCollect
+  
+  dt_hyppar <- listOutput$resultHypParam[solID == modID]
+  if (!(modID %in% dt_hyppar$solID)) {stop("provided modID is not within the best results")}
+  
+  dt_bestCoef <- listOutput$xDecompAgg[solID == modID & rn %in% listInput$set_mediaVarName]
+  
   ## check input parameters
+  
   if (any(channel_constr_low <0.01) | any(channel_constr_low >1)) {stop("channel_constr_low must be between 0.01 and 1")}
   if (any(channel_constr_up <1) | any(channel_constr_up >5)) {stop("channel_constr_up must be between 1-5")}
   if (!(scenario %in% c("max_historical_response", "max_response_expected_spend"))) {
@@ -43,124 +62,87 @@ robyn_allocator <- function(listInput
     }
   }
   
-  ## get dt 
-  dt_bestHyperParam <- listOutput$resultHypParam[solID == modID]
-  if (!(modID %in% dt_bestHyperParam$solID)) {stop("provided modID is not within the best results")}
-  dt_bestCoef <- listOutput$xDecompAgg[solID == modID & rn %in% listInput$set_mediaVarName]
+  names(channel_constr_low) <- set_mediaVarName; names(channel_constr_up) <- set_mediaVarName
   
-  dt_spendShare <- listInput$dt_input[listInput$dt_input[, rank(.SD), .SDcols = listInput$set_dateVarName]]
-  dt_spendShare <- dt_spendShare[, .(rn = listInput$set_mediaVarName,
-                                     total_spend = sapply(.SD, sum)), .SDcols=listInput$set_mediaSpendName]
-  dt_bestCoef[dt_spendShare[, .(rn, total_spend)], ':='(spend = i.total_spend, roi = xDecompAgg / i.total_spend), on = "rn"]
-  dt_optim <- copy(listInput$dt_mod)
   
-  ## get filter for channels mmm coef reduced to 0
+  ## filter and sort
+  
+  dt_mediaSpend <- dt_input[startRW:endRW, mediaSpendSorted, with = F]
+  
+  ## sort table and get filter for channels mmm coef reduced to 0
   dt_coef <- dt_bestCoef[, .(rn, coef)]
   get_rn_order <- order(dt_bestCoef$rn)
   dt_coefSorted <- dt_coef[get_rn_order]
+  dt_bestCoef <- dt_bestCoef[get_rn_order]
   coefSelectorSorted <- dt_coefSorted[, coef>0]
   names(coefSelectorSorted) <- dt_coefSorted$rn
   
   ## filter and sort all variables by name that is essential for the apply function later
-  channelNames <- sort(listInput$set_mediaVarName)
-  channelNames <- channelNames[coefSelectorSorted]
+  mediaVarSortedFiltered <- mediaVarSorted[coefSelectorSorted]
+  mediaSpendSortedFiltered <- mediaSpendSorted[coefSelectorSorted]
   if(!all(coefSelectorSorted)) {
-    chn_coef0 <- setdiff(listInput$set_mediaVarName, channelNames)
+    chn_coef0 <- setdiff(mediaVarSorted, mediaVarSortedFiltered)
     message(paste(chn_coef0, collapse = ", "), " are excluded in optimiser because their coeffients are 0")
   }
   
-  dt_bestHyperParam <- dt_bestHyperParam[, .SD, .SDcols = na.omit(str_extract(names(dt_bestHyperParam),paste(paste0(channelNames,".*"),collapse = "|")))]
-  setcolorder(dt_bestHyperParam, sort(names(dt_bestHyperParam)))
+  dt_hyppar <- dt_hyppar[, .SD, .SDcols = na.omit(str_extract(names(dt_hyppar),paste(paste0(mediaVarSortedFiltered,".*"),collapse = "|")))]
+  setcolorder(dt_hyppar, sort(names(dt_hyppar)))
   
-  dt_optim <- dt_optim[, channelNames, with = F]
-  setcolorder(dt_optim, sort(names(dt_optim)))
+  dt_optim <- dt_mod[, mediaVarSortedFiltered, with = F]
+  dt_optimCost <- dt_input[startRW:endRW, mediaSpendSortedFiltered, with = F]
+  dt_bestCoef <- dt_bestCoef[rn %in% mediaVarSortedFiltered]
   
-  dt_optimCost <- copy(listInput$dt_input)
-  dt_optimCost <- dt_optimCost[, listInput$set_mediaSpendName, with = F]
-  names(dt_optimCost) <- listInput$set_mediaVarName
-  #dt_optimCost <- dt_optimCost[, channelNames, with=F]
-  setcolorder(dt_optimCost, channelNames)
-  
-  dt_bestCoef <- dt_bestCoef[order(rank(rn))][rn %in% channelNames]
-  
-  costMultiplierVec <- listInput$mediaCostFactor[channelNames]
+  costMultiplierVec <- listInput$mediaCostFactor[mediaVarSortedFiltered]
   
   if(any(listInput$costSelector)) {
-    dt_modNLS <- merge(data.table(channel=channelNames), listInput$modNLSCollect, all.x = T, by = "channel")
+    dt_modNLS <- merge(data.table(channel=mediaVarSortedFiltered), spendExpoMod, all.x = T, by = "channel")
     vmaxVec <- dt_modNLS[order(rank(channel))][, Vmax]
-    names(vmaxVec) <- channelNames
+    names(vmaxVec) <- mediaVarSortedFiltered
     kmVec <- dt_modNLS[order(rank(channel))][, Km]
-    names(kmVec) <- channelNames
+    names(kmVec) <- mediaVarSortedFiltered
   } else {
-    vmaxVec <- rep(0, length(channelNames))
-    kmVec <- rep(0, length(channelNames))
+    vmaxVec <- rep(0, length(mediaVarSortedFiltered))
+    kmVec <- rep(0, length(mediaVarSortedFiltered))
   }
   
-  #names(listInput$costSelector) <- listInput$set_mediaVarName
-  costSelectorSorted <- listInput$costSelector[order(listInput$set_mediaVarName)]
+  costSelectorSorted <- listInput$costSelector[media_order]
   costSelectorSorted <- costSelectorSorted[coefSelectorSorted]
-  costSelectorSorted <- costSelectorSorted[channelNames]
+  costSelectorSortedFiltered <- costSelectorSorted[mediaVarSortedFiltered]
   
-  names(channel_constr_low) <- listInput$set_mediaVarName; names(channel_constr_up) <- listInput$set_mediaVarName
-  channelConstrLowSorted <- channel_constr_low[order(listInput$set_mediaVarName)][coefSelectorSorted]
-  channelConstrUpSorted <- channel_constr_up[order(listInput$set_mediaVarName)][coefSelectorSorted]
+  channelConstrLowSorted <- channel_constr_low[media_order][coefSelectorSorted]
+  channelConstrUpSorted <- channel_constr_up[media_order][coefSelectorSorted]
   
   ## get adstock parameters for each channel
   if (listInput$adstock == "geometric") {
-    getAdstockHypPar <- unlist(dt_bestHyperParam[, .SD, .SDcols = na.omit(str_extract(names(dt_bestHyperParam),".*_thetas"))])
+    getAdstockHypPar <- unlist(dt_hyppar[, .SD, .SDcols = na.omit(str_extract(names(dt_hyppar),".*_thetas"))])
   } else if (listInput$adstock == "weibull") {
-    getAdstockHypPar <- unlist(dt_bestHyperParam[, .SD, .SDcols = na.omit(str_extract(names(dt_bestHyperParam),".*_shapes|.*_scales"))])
+    getAdstockHypPar <- unlist(dt_hyppar[, .SD, .SDcols = na.omit(str_extract(names(dt_hyppar),".*_shapes|.*_scales"))])
   }
   
   ## get hill parameters for each channel
-  hillHypParVec <- unlist(dt_bestHyperParam[, .SD, .SDcols = na.omit(str_extract(names(dt_bestHyperParam),".*_alphas|.*_gammas"))])
+  hillHypParVec <- unlist(dt_hyppar[, .SD, .SDcols = na.omit(str_extract(names(dt_hyppar),".*_alphas|.*_gammas"))])
   alphas <- hillHypParVec[str_which(names(hillHypParVec), "_alphas")]
+  gammas <- hillHypParVec[str_which(names(hillHypParVec), "_gammas")]
   
-  adstockTrans <- mapply(function(chnl) {
-    
-    alpha <- hillHypParVec[str_which(names(hillHypParVec), paste0(chnl, "_alphas"))]
-    gamma <- hillHypParVec[str_which(names(hillHypParVec), paste0(chnl, "_gammas"))]
-    chnRaw <- unlist(dt_optim[, chnl, with =F])
-    
-    if (listInput$adstock == "geometric") {
-      chnAdstocked <- f.transformation(chnRaw
-                                       ,theta = getAdstockHypPar[str_which(names(getAdstockHypPar), chnl)]
-                                       ,alpha = alpha
-                                       ,gamma = gamma
-                                       ,alternative = listInput$adstock
-                                       ,stage = 2)
-    } else if (listInput$adstock == "weibull") {
-      chnAdstocked <- f.transformation(chnRaw
-                                       ,shape = getAdstockHypPar[str_which(names(getAdstockHypPar), paste0(chnl, "_shapes"))]
-                                       ,scale = getAdstockHypPar[str_which(names(getAdstockHypPar), paste0(chnl, "_scales"))]
-                                       ,alpha = alpha
-                                       ,gamma = gamma
-                                       ,alternative = listInput$adstock
-                                       ,stage = 2)
-    }
-    
-    gammaTrans <- round(quantile(seq(range(chnAdstocked)[1],range(chnAdstocked)[2], length.out = 100), gamma),4)
-    names(gammaTrans) <- NULL
-    
-    return(list(gammaTrans=gammaTrans, chnAdstocked=chnAdstocked))
-    
-  }, chnl = channelNames, SIMPLIFY = F)
+  chnAdstocked <- listOutput$mediaVecCollect[type == "adstockedMedia", mediaVarSortedFiltered, with = F][startRW:endRW]
+  gammaTrans <- mapply(function(gamma, x) {round(quantile(seq(range(x)[1], range(x)[2], length.out = 100), gamma),4)}
+                       ,gamma = gammas
+                       ,x = chnAdstocked)
+  names(gammaTrans) <- names(gammas)
   
-  gammaTrans <- sapply(adstockTrans, function(x) x[1][["gammaTrans"]])
-  chnAdstocked <- as.data.table(sapply(mapply(function(lst, n) data.table(n=lst[2][["chnAdstocked"]]), lst = adstockTrans, n = names(adstockTrans)), cbind))
-  names(chnAdstocked) <- channelNames
-  adstockMultiplierVec <- colSums(chnAdstocked) / colSums(dt_optim)
-  
-  coefs <- dt_bestCoef[,coef]; names(coefs) <- dt_bestCoef[,rn]
+  coefs <- dt_coef[,coef]; names(coefs) <- dt_coef[,rn]
   
   ## build evaluation funciton
   if(any(listInput$costSelector)) {
-    mm_lm_coefs <- listInput$modNLSCollect$coef_lm
-    names(mm_lm_coefs) <- listInput$modNLSCollect$channel
+    mm_lm_coefs <- spendExpoMod$coef_lm
+    names(mm_lm_coefs) <- spendExpoMod$channel
   } else {
     mm_lm_coefs <- c()
   }
-
+  
+  # sl=1;coeff = coefs[sl]; alpha = alphas[sl]; gammaTran = gammaTrans[sl]; chnName = mediaVarSortedFiltered[sl]; vmax = vmaxVec[sl]; km = kmVec[sl]; criteria = costSelectorSortedFiltered[sl]
+  # coeff* f.hill(x=chnAdstocked[, get("facebook_I")], alpha = alpha, gamma = gammas[sl], x_marginal = f.micMen(x=Spend, Vmax=vmax, Km=km))
+  
   eval_f <- function(X) {
     return(
       list(
@@ -173,7 +155,7 @@ robyn_allocator <- function(listInput
             if (criteria) {
               xScaled <- f.micMen(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
             } else if (chnName %in% names(mm_lm_coefs)) {
-                xScaled <- x * mm_lm_coefs[chnName]
+              xScaled <- x * mm_lm_coefs[chnName]
             } else {
               xScaled <- x 
             }
@@ -183,14 +165,15 @@ robyn_allocator <- function(listInput
             
             # hill transformation
             #xOut <- coeff * sum( (1 + gammaTran**alpha / (x/costMultiplier*adstockMultiplier) **alpha)**-1) 
-            xOut <- coeff * sum( (1 + gammaTran**alpha / xAdstocked **alpha)**-1)
+            xOut <- coeff * sum( (1 + gammaTran**alpha / xAdstocked **alpha)**-1); xOut
+            
             
             return(xOut)
           }, x=X #, costMultiplier = costMultiplierVec, adstockMultiplier=adstockMultiplierVec
           , coeff = coefs
           , alpha = alphas, gammaTran = gammaTrans
-          , chnName = channelNames
-          , vmax = vmaxVec, km = kmVec, criteria = costSelectorSorted
+          , chnName = mediaVarSortedFiltered
+          , vmax = vmaxVec, km = kmVec, criteria = costSelectorSortedFiltered
           , SIMPLIFY = T)
         ),
         
@@ -218,8 +201,8 @@ robyn_allocator <- function(listInput
           }, x=X #, costMultiplier = costMultiplierVec, adstockMultiplier=adstockMultiplierVec
           , coeff = coefs
           , alpha = alphas, gammaTran = gammaTrans
-          , chnName = channelNames
-          , vmax = vmaxVec, km = kmVec, criteria = costSelectorSorted
+          , chnName = mediaVarSortedFiltered
+          , vmax = vmaxVec, km = kmVec, criteria = costSelectorSortedFiltered
           , SIMPLIFY = T)
         ), # https://www.derivative-calculator.net/ on the objective function 1/(1+gamma^alpha / x^alpha)
         
@@ -248,8 +231,8 @@ robyn_allocator <- function(listInput
           }, x=X #, costMultiplier = costMultiplierVec, adstockMultiplier=adstockMultiplierVec
           , coeff = coefs
           , alpha = alphas, gammaTran = gammaTrans
-          , chnName = channelNames
-          , vmax = vmaxVec, km = kmVec, criteria = costSelectorSorted
+          , chnName = mediaVarSortedFiltered
+          , vmax = vmaxVec, km = kmVec, criteria = costSelectorSortedFiltered
           , SIMPLIFY = T)
         
       ))}
@@ -279,17 +262,17 @@ robyn_allocator <- function(listInput
   histSpendUnitTotal <- sum(xDecompAggMedia$mean_spend) # histSpendTotal/ nPeriod
   #histSpendShare <- histSpend / histSpendTotal
   #histSpendUnit <- histSpendUnitTotal * histSpendShare
-  histSpendUnit <- xDecompAggMedia[rn %in% channelNames, mean_spend]; names(histSpendUnit) <- channelNames
-  histSpendShare <- xDecompAggMedia[rn %in% channelNames, spend_share]; names(histSpendShare) <- channelNames
+  histSpendUnit <- xDecompAggMedia[rn %in% mediaVarSortedFiltered, mean_spend]; names(histSpendUnit) <- mediaVarSortedFiltered
+  histSpendShare <- xDecompAggMedia[rn %in% mediaVarSortedFiltered, spend_share]; names(histSpendShare) <- mediaVarSortedFiltered
   
   # QA: check if objective function correctly implemented
-  histResponseUnitModel <- xDecompAggMedia[rn %in% channelNames, get("mean_response")]; names(histResponseUnitModel) <- channelNames
+  histResponseUnitModel <- xDecompAggMedia[rn %in% mediaVarSortedFiltered, get("mean_response")]; names(histResponseUnitModel) <- mediaVarSortedFiltered
   histResponseUnitAllocator <- unlist(-eval_f(histSpendUnit)[["objective.channel"]])
   identical(round(histResponseUnitModel,3), round(histResponseUnitAllocator,3))
   
   # for (i in 1:length(chn_coef0)) {
-  #   histResponseUnit[length(channelNames)+i] <- 0
-  #   names(histResponseUnit)[length(channelNames)+i] <- chn_coef0[i]
+  #   histResponseUnit[length(mediaVarSortedFiltered)+i] <- 0
+  #   names(histResponseUnit)[length(mediaVarSortedFiltered)+i] <- chn_coef0[i]
   # }
   # histResponseUnit <- histResponseUnit[names(histSpend)]
   
@@ -319,7 +302,7 @@ robyn_allocator <- function(listInput
   if (optim_algo == "MMA_AUGLAG") {
     local_opts <- list( "algorithm" = "NLOPT_LD_MMA", 
                         "xtol_rel" = 1.0e-10 )
-
+    
   } else if (optim_algo == "SLSQP_AUGLAG") {
     local_opts <- list( "algorithm" = "NLOPT_LD_SLSQP",
                         "xtol_rel" = 1.0e-10 )
@@ -357,8 +340,8 @@ robyn_allocator <- function(listInput
   dt_bestModel <- dt_bestCoef[, .(rn, mean_spend, xDecompAgg, roi)][order(rank(rn))]
   
   dt_optimOut <- data.table(
-    channels = channelNames
-    ,histSpend = histSpend[channelNames]
+    channels = mediaVarSortedFiltered
+    ,histSpend = histSpend[mediaVarSortedFiltered]
     ,histSpendTotal = histSpendTotal
     ,initSpendUnitTotal = histSpendUnitTotal
     ,initSpendUnit = histSpendUnit
@@ -390,6 +373,7 @@ robyn_allocator <- function(listInput
   
   dt_optimOut[, optmResponseUnitTotalLift:= (optmResponseUnitTotal / initResponseUnitTotal) -1]
   print(dt_optimOut)
+  # dt_optimOut[, .(channels, initSpendUnit, initResponseUnit, initSpendUnitTotal, initRoiUnit, expSpendUnitTotal,optmSpendUnit, optmResponseUnit,  optmRoiUnit, optmResponseUnitLift, optmResponseUnitTotalLift)]
   
   ## plot allocator results
   
@@ -406,15 +390,15 @@ robyn_allocator <- function(listInput
   
   plotDT_roi <- suppressWarnings(melt.data.table(plotDT_roi, id.vars = "channel", value.name = "roi"))
   p11 <- ggplot(plotDT_roi, aes(x=channel, y=roi,fill = variable)) +
-          geom_bar(stat = "identity", width = 0.5, position = "dodge") +
-          coord_flip() +
-          scale_fill_brewer(palette = "Paired") +
-          geom_text(aes(label=round(roi,2), hjust=1, size=2.0),  position=position_dodge(width=0.5), fontface = "bold", show.legend = FALSE) +
-          theme( legend.title = element_blank(), legend.position = c(0.9, 0.2) ,axis.text.x = element_blank(), legend.background=element_rect(colour='grey', fill='transparent')) +
-          labs(title = "Initial vs. optimised mean ROI"
-               ,subtitle = paste0("Total spend increases ", plotDT_total[, round(mean(optmSpendUnitTotalDelta)*100,1)], "%"
-                                  ,"\nTotal response increases ", plotDT_total[, round(mean(optmResponseUnitTotalLift)*100,1)], "% with optimised spend allocation")
-               ,y="", x="Channels")
+    geom_bar(stat = "identity", width = 0.5, position = "dodge") +
+    coord_flip() +
+    scale_fill_brewer(palette = "Paired") +
+    geom_text(aes(label=round(roi,2), hjust=1, size=2.0),  position=position_dodge(width=0.5), fontface = "bold", show.legend = FALSE) +
+    theme( legend.title = element_blank(), legend.position = c(0.9, 0.2) ,axis.text.x = element_blank(), legend.background=element_rect(colour='grey', fill='transparent')) +
+    labs(title = "Initial vs. optimised mean ROI"
+         ,subtitle = paste0("Total spend increases ", plotDT_total[, round(mean(optmSpendUnitTotalDelta)*100,1)], "%"
+                            ,"\nTotal response increases ", plotDT_total[, round(mean(optmResponseUnitTotalLift)*100,1)], "% with optimised spend allocation")
+         ,y="", x="Channels")
   
   # Response comparison plot
   plotDT_resp <- plotDT_total[, c("channels", "initResponseUnit", "optmResponseUnit")][order(rank(channels))]
@@ -425,16 +409,16 @@ robyn_allocator <- function(listInput
   
   plotDT_resp <- suppressWarnings(melt.data.table(plotDT_resp, id.vars = "channel", value.name = "response"))
   p12 <- ggplot(plotDT_resp, aes(x=channel, y=response, fill = variable)) +
-          geom_bar(stat = "identity", width = 0.5, position = "dodge") +
-          coord_flip() +
-          scale_fill_brewer(palette = "Paired") +
-          geom_text(aes(label=round(response,0), hjust=1, size=2.0), position=position_dodge(width=0.5), fontface = "bold", show.legend = FALSE) +
-          theme( legend.title = element_blank(), legend.position = c(0.8, 0.2) ,axis.text.x = element_blank(), legend.background=element_rect(colour='grey', fill='transparent')) +
-          labs(title = "Initial vs. optimised mean response"
-               ,subtitle = paste0("Total spend increases ", plotDT_total[, round(mean(optmSpendUnitTotalDelta)*100,1)], "%"
-                                  ,"\nTotal response increases ", plotDT_total[, round(mean(optmResponseUnitTotalLift)*100,1)], "% with optimised spend allocation"
-               )
-               ,y="", x="Channels")
+    geom_bar(stat = "identity", width = 0.5, position = "dodge") +
+    coord_flip() +
+    scale_fill_brewer(palette = "Paired") +
+    geom_text(aes(label=round(response,0), hjust=1, size=2.0), position=position_dodge(width=0.5), fontface = "bold", show.legend = FALSE) +
+    theme( legend.title = element_blank(), legend.position = c(0.8, 0.2) ,axis.text.x = element_blank(), legend.background=element_rect(colour='grey', fill='transparent')) +
+    labs(title = "Initial vs. optimised mean response"
+         ,subtitle = paste0("Total spend increases ", plotDT_total[, round(mean(optmSpendUnitTotalDelta)*100,1)], "%"
+                            ,"\nTotal response increases ", plotDT_total[, round(mean(optmResponseUnitTotalLift)*100,1)], "% with optimised spend allocation"
+         )
+         ,y="", x="Channels")
   
   # budget share comparison plot
   plotDT_share <- plotDT_total[, c("channels", "initSpendShare", "optmSpendShareUnit")][order(rank(channels))]
