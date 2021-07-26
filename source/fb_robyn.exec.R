@@ -49,12 +49,66 @@ use_condaenv("r-reticulate")
 #import("nevergrad")
 
 dt_input <- fread(paste0(script_path, "de_simulated_data.csv"))
+dt_input <- copy(dt_input[, ':='(events=  as.factor(rep(c(rep("normal", 60), rep("event1",2), rep("normal", 40), rep("event2",2)),2))
+                                 ,launches = as.factor(rep(c(rep("no_launch", 30), rep("launch1",2), rep("no_launch", 70), rep("launch2",2)),2)))])
+
 dt_holidays <- fread(paste0(script_path, "holidays.csv"))
 robyn_object <- "/Users/gufengzhou/Documents/robyn_dev_output/Robyn.RData"
 registerDoSEQ(); detectCores()
 
 ################################################################
 #### set model input & feature engineering
+
+#### Guidance to set hypereparameter bounds ####
+
+## 1. get correct hyperparameter names:
+# run hyper_names() to get correct hyperparameter names. all names in set_hyperBoundLocal must equal names in local_name, case sensitive
+
+## 2. get guidance for setting hyperparameter bounds:
+# For geometric adstock, use theta, alpha & gamma. For weibull adstock, use shape, scale, alpha, gamma
+# theta: In geometric adstock, theta is decay rate. guideline for usual media genre: TV c(0.3, 0.8), OOH/Print/Radio c(0.1, 0.4), digital c(0, 0.3)
+# shape: In weibull adstock, shape controls the decay shape. Recommended c(0.0001, 2). The larger, the more S-shape. The smaller, the more L-shape
+# scale: In weibull adstock, scale controls the decay inflexion point. Very conservative recommended bounce c(0, 0.1), becausee scale can increase adstocking half-life greaetly
+# alpha: In s-curve transformation with hill function, alpha controls the shape between exponential and s-shape. Recommended c(0.5, 3). The larger the alpha, the more S-shape. The smaller, the more C-shape
+# gamma: In s-curve transformation with hill function, gamma controls the inflexion point. Recommended bounce c(0.3, 1). The larger the gamma, the later the inflection point in the response curve
+
+## 3. set each hyperparameter bounds. They either contains two values e.g. c(0, 0.5), or only one value (in which case you've "fixed" that hyperparameter)
+set_adstock <- "geometric"
+set_mediaVarName <- c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I"	,"search_clicks_P") 
+hyper_names(adstock = set_adstock, set_mediaVarName = set_mediaVarName)
+
+set_hyperBoundLocal <- list(
+  facebook_I_alphas = c(0.5, 3) # example bounds for alpha
+  ,facebook_I_gammas = c(0.3, 1) # example bounds for gamma
+  ,facebook_I_thetas = c(0, 0.3) # example bounds for theta
+  #,facebook_I_shapes = c(0.0001, 2) # example bounds for shape
+  #,facebook_I_scales = c(0, 0.1) # example bounds for scale
+  
+  ,ooh_S_alphas = c(0.5, 3)
+  ,ooh_S_gammas = c(0.3, 1)
+  ,ooh_S_thetas = c(0.1, 0.4)
+  #,ooh_S_shapes = c(0.0001, 2)
+  #,ooh_S_scales = c(0, 0.1)
+  
+  ,print_S_alphas = c(0.5, 3)
+  ,print_S_gammas = c(0.3, 1)
+  ,print_S_thetas = c(0.1, 0.4)
+  #,print_S_shapes = c(0.0001, 2)
+  #,print_S_scales = c(0, 0.1)
+  
+  ,tv_S_alphas = c(0.5, 3)
+  ,tv_S_gammas = c(0.3, 1)
+  ,tv_S_thetas = c(0.3, 0.8)
+  #,tv_S_shapes = c(0.0001, 2)
+  #,tv_S_scales= c(0, 0.1)
+  
+  ,search_clicks_P_alphas = c(0.5, 3)
+  ,search_clicks_P_gammas = c(0.3, 1)
+  ,search_clicks_P_thetas = c(0, 0.3)
+  #,search_clicks_P_shapes = c(0.0001, 2)
+  #,search_clicks_P_scales = c(0, 0.1)
+)
+
 
 listInput <- robyn_inputs(dt_input = dt_input
                          ,dt_holidays = dt_holidays
@@ -65,23 +119,16 @@ listInput <- robyn_inputs(dt_input = dt_input
                          ,set_prophetVarSign = c("default","default", "default") # c("default", "positive", and "negative"). Recommend as default. Must be same length as set_prophet
                          ,set_prophetCountry = "DE" # only one country allowed once. Including national holidays for 59 countries, whose list can be found on our githut guide
                          
-                         # ,set_baseVarName = c("sem_brand_S") # typically competitors, price & promotion, temperature,  unemployment rate etc
-                         # ,set_baseVarSign = c("positive") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
+                         ,set_baseVarName = c("competitor_sales_B", "events", "launches") # typically competitors, price & promotion, temperature,  unemployment rate etc
+                         ,set_baseVarSign = c("default", "default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
                          
-                         ,set_baseVarName = c("competitor_sales_B") # typically competitors, price & promotion, temperature,  unemployment rate etc
-                         ,set_baseVarSign = c("default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
-                         
-                         #,set_mediaVarName = c("affiliates_S", "sem_non_brand_I"	,"rmk_I",	"sho_I"	,"fb_I") # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
-                         #,set_mediaVarSign = c("positive", "positive", "positive", "positive", "positive") # c("default", "positive", and "negative"), control the signs of coefficients for media variables
-                         #,set_mediaSpendName = c("affiliates_S", "sem_non_brand_S"	,"rmk_S",	"sho_S"	,"fb_S") # spends must have same order and same length as set_mediaVarName
-                         
-                         ,set_mediaVarName = c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I"	,"search_clicks_P") # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
+                         ,set_mediaVarName = set_mediaVarName # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
                          ,set_mediaVarSign = c("positive", "positive", "positive", "positive", "positive") # c("default", "positive", and "negative"), control the signs of coefficients for media variables
                          ,set_mediaSpendName = c("tv_S"	,"ooh_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as set_mediaVarName
                          
                          #,set_organicMedia
                          
-                         #,set_factorVarName = NULL # please specify which variable above should be factor
+                         ,set_factorVarName = c("events", "launches") # please specify which variable above should be factor
                          
                          ################################################################
                          #### set global model parameters
@@ -103,55 +150,7 @@ listInput <- robyn_inputs(dt_input = dt_input
                          ,set_trial = 1 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
                          ## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
                          
-                         ################################################################
-                         #### tune channel hyperparameters bounds
-                         
-                         #### Guidance to set hypereparameter bounds ####
-                         
-                         ## 1. get correct hyperparameter names:
-                         #local_name <- f.getHyperNames(); local_name # names in set_hyperBoundLocal must equal names in local_name, case sensitive
-                         
-                         ## 2. get guidance for setting hyperparameter bounds:
-                         # For geometric adstock, use theta, alpha & gamma. For weibull adstock, use shape, scale, alpha, gamma
-                         # theta: In geometric adstock, theta is decay rate. guideline for usual media genre: TV c(0.3, 0.8), OOH/Print/Radio c(0.1, 0.4), digital c(0, 0.3)
-                         # shape: In weibull adstock, shape controls the decay shape. Recommended c(0.0001, 2). The larger, the more S-shape. The smaller, the more L-shape
-                         # scale: In weibull adstock, scale controls the decay inflexion point. Very conservative recommended bounce c(0, 0.1), becausee scale can increase adstocking half-life greaetly
-                         # alpha: In s-curve transformation with hill function, alpha controls the shape between exponential and s-shape. Recommended c(0.5, 3). The larger the alpha, the more S-shape. The smaller, the more C-shape
-                         # gamma: In s-curve transformation with hill function, gamma controls the inflexion point. Recommended bounce c(0.3, 1). The larger the gamma, the later the inflection point in the response curve
-                         
-                         ## 3. set each hyperparameter bounds. They either contains two values e.g. c(0, 0.5), or only one value (in which case you've "fixed" that hyperparameter)
-                         
-                         ,set_hyperBoundLocal = list(
-                           facebook_I_alphas = c(0.5, 3) # example bounds for alpha
-                           ,facebook_I_gammas = c(0.3, 1) # example bounds for gamma
-                           ,facebook_I_thetas = c(0, 0.3) # example bounds for theta
-                           #,facebook_I_shapes = c(0.0001, 2) # example bounds for shape
-                           #,facebook_I_scales = c(0, 0.1) # example bounds for scale
-                           
-                           ,ooh_S_alphas = c(0.5, 3)
-                           ,ooh_S_gammas = c(0.3, 1)
-                           ,ooh_S_thetas = c(0.1, 0.4)
-                           #,ooh_S_shapes = c(0.0001, 2)
-                           #,ooh_S_scales = c(0, 0.1)
-                           
-                           ,print_S_alphas = c(0.5, 3)
-                           ,print_S_gammas = c(0.3, 1)
-                           ,print_S_thetas = c(0.1, 0.4)
-                           #,print_S_shapes = c(0.0001, 2)
-                           #,print_S_scales = c(0, 0.1)
-                           
-                           ,tv_S_alphas = c(0.5, 3)
-                           ,tv_S_gammas = c(0.3, 1)
-                           ,tv_S_thetas = c(0.3, 0.8)
-                           #,tv_S_shapes = c(0.0001, 2)
-                           #,tv_S_scales= c(0, 0.1)
-                           
-                           ,search_clicks_P_alphas = c(0.5, 3)
-                           ,search_clicks_P_gammas = c(0.3, 1)
-                           ,search_clicks_P_thetas = c(0, 0.3)
-                           #,search_clicks_P_shapes = c(0.0001, 2)
-                           #,search_clicks_P_scales = c(0, 0.1)
-                         )
+                         ,set_hyperBoundLocal = set_hyperBoundLocal
                          
                          # ,set_lift = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
                          #                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
@@ -163,25 +162,22 @@ listInput <- robyn_inputs(dt_input = dt_input
 
 ## helper plots: set plot to TRUE for transformation examples
 plot_adstock(F) # adstock transformation example plot, helping you understand geometric/theta and weibull/shape/scale transformation
-plot_saturation(F) # s-curve transformation example plot, helping you understand hill/alpha/gamma transformation
-
+plot_saturation(F) # s-curve transformation example plot, helping you understand hill/alpha/gamma transformatio
 
 ################################################################
 #### Run models
 
 listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, pareto_fronts =3)
 
-
-######################### NOTE: must run f.saveInitMod to select and save ONE model first, before refreshing below
+######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
 ## save selected model
 listOutput$allSolutions
-robyn_save(robyn_object = robyn_object, initModID = "1_16_6", listInput = listInput, listOutput = listOutput)
-# load("/Users/gufengzhou/Documents/GitHub/plots/listInit.RData")
+robyn_save(robyn_object = robyn_object, initModID = "1_7_5", listInput = listInput, listOutput = listOutput)
+# load(robyn_object)
 
-## reload old models from csv
+## THIS PART IS NOT YET ADAPTED!! reload old models from csv
 # dt_oldModels <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-09 12.54/pareto_hyperparameters.csv") # load hyperparameter csv. Provide your own path.
 # robyn_run_fixed(plot_folder = "~/Documents/GitHub/plots", dt_hyppar_fixed = dt_oldModels, modID = "3_4_6") # solID must be included in the csv
-
 
 ################################################################
 #### Budget Allocator - Beta
@@ -190,11 +186,11 @@ robyn_save(robyn_object = robyn_object, initModID = "1_16_6", listInput = listIn
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
 listOutput$allSolutions
-listOutput$xDecompAgg[solID == "1_16_6" & !is.na(mean_spend), .(rn, mean_spend, mean_response, roi)]
+listOutput$xDecompAgg[solID == "1_7_5" & !is.na(mean_spend), .(rn, mean_spend, mean_response, roi)] #check media summary for selected model
 
 listAllocator <- robyn_allocator(listInput
                                  ,listOutput
-                                 ,modID = "1_16_6" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+                                 ,modID = "1_7_5" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
                                  ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
                                  ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                                  #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
@@ -216,10 +212,8 @@ round(optimal_response_allocator) == round(optimal_response)
 ################################################################
 #### Model refresh - Alpha
 
-# rm(list=ls())
-# script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
-source(paste(script_path, "fb_robyn.func.R", sep=""))
-source(paste(script_path, "fb_robyn.optm.R", sep=""))
+# source(paste(script_path, "fb_robyn.func.R", sep=""))
+# source(paste(script_path, "fb_robyn.optm.R", sep=""))
 
 Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
                        , dt_input = dt_input
@@ -236,32 +230,37 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
 
 
 # QA
-load(robyn_object)
-length(Robyn);names(Robyn)
-Robyn$listRefresh1 <- NULL
-save(Robyn, file = robyn_object)
+# load(robyn_object)
+# length(Robyn);names(Robyn)
+# Robyn$listRefresh1 <- NULL
+# save(Robyn, file = robyn_object)
 
 ################################################################
 #### get marginal returns
+
+## example of how to get marginal ROI for 80k spend for search channel from the second refresh model
 Robyn$listRefresh2$listReport$xDecompAggReport[, .(refreshStatus, rn, mean_spend, mean_response, roi)]
 
+# get response for 80k
 Spend <- 80000
 Response <- robyn_response(robyn_object = robyn_object
-                           , select_run = 2
+                           , select_run = 2 # 2 means the sedond refresh model. 0 means the initial model
                            , mediaVarName = "search_clicks_P"
                            , Spend = Spend)
-Response/Spend
+Response/Spend # ROI for search 80k
 
+# get response for 80k+1
 Spend1 <- Spend+1
 Response1 <- robyn_response(robyn_object = robyn_object
                             , select_run = 2
                             , mediaVarName = "search_clicks_P"
                             , Spend = Spend1)
-Response1/Spend1
+Response1/Spend1 # ROI for search 80k
+
+# marginal ROI of 80k search
 Response1-Response
 
-
-remotes::install_github("laresbernardo/Robyn")
+# remotes::install_github("laresbernardo/Robyn")
 
 
 

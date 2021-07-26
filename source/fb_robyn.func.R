@@ -8,8 +8,8 @@
 ###### Input and setup functions
 ########################################################################
 
-robyn_inputs <- function(dt_input = fread(paste0(script_path, data_csv_name))
-                         ,dt_holidays = fread(paste0(script_path, holiday_csv_name))
+robyn_inputs <- function(dt_input
+                         ,dt_holidays
                          
                          ,set_dateVarName = NULL # date format must be "2020-01-01"
                          ,set_depVarName = NULL # there should be only one dependent variable
@@ -406,9 +406,6 @@ f.unit_format <- function(x_in) {
 
 
 robyn_engineering <- function(listInput = listInput
-                              # ,listDT = parent.frame()$listDT
-                              # dt_transform = listDT$dt_input, 
-                              #, listParam = parent.frame()$listParam
                               , refresh = F) {
   
   
@@ -421,43 +418,6 @@ robyn_engineering <- function(listInput = listInput
   dt_transformRollWind <- dt_transform[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
   
   setnames(dt_transform, listInput$set_depVarName, "depVar", skip_absent = T) #; listInput$set_depVarName <- "depVar"
-  #indepName <- c(listInput$set_prophet, listInput$set_baseVarName, listInput$set_mediaVarName)
-  
-  ## check date format
-  # tryCatch({
-  #   dateCheck <- as.Date(dt_transform$ds)
-  #   dateCheckStart <- as.Date(listInput$set_rollingWindowStartDate)
-  # },
-  # error= function(cond) {
-  #   stop("input date variable and listInput$set_rollingWindowStartDate should have format '2020-01-01'")
-  # })
-  
-  # if (any(dateCheckStart< min(dt_transform$ds), dateCheckStart> max(dt_transform$ds))) {
-  #   stop("listInput$set_rollingWindowStartDate must be between ", min(dt_transform$ds) ," and ",max(dt_transform$ds))
-  # }
-  
-  ## check variables existence
-  
-  # if (is.null(listInput$set_mediaSpendName)) {stop("listInput$set_mediaSpendName must be specified")
-  # } else if(length(listInput$set_mediaVarName) != length(listInput$set_mediaSpendName)) {
-  #   stop("listInput$set_mediaSpendName and listInput$set_mediaVarName have to be the same length and same order")}
-  
-  
-  #trainSize <- round(nrow(dt_transform)* set_modTrainSize)
-  #dt_train <- dt_transform[1:trainSize, listInput$set_mediaVarName, with =F]
-  # trainStartWhich <- which.min(abs(difftime(as.Date(dt_transform$ds), as.Date(listInput$set_rollingWindowStartDate), units = "days")))
-  # dt_train <- dt_transform[trainStartWhich:nrow(dt_transform), listInput$set_mediaVarName, with =F]
-  # train_all0 <- colSums(dt_train)==0
-  # if(any(train_all0)) {
-  #   stop("These media channels contains only 0 within training period ",dt_transform$ds[trainStartWhich], " to ", max(dt_transform$ds), ": ", paste(names(dt_train)[train_all0], collapse = ", ")
-  #        , " \nRecommendation: adapt listInput$set_rollingWindowStartDate, remove or combine these channels")
-  # }
-  
-  
-  #hypName <- c("thetas", "shapes", "scales", "alphas", "gammas", "lambdas") # defind hyperparameter names
-  #dayInterval <- as.integer(difftime(sort(unique(dt_transform$ds))[2], sort(unique(dt_transform$ds))[1], units = "days"))
-  #intervalType <- if(dayInterval==1) {"day"} else if (dayInterval==7) {"week"} else if (dayInterval %in% 28:31) {"month"} else {stop("input data has to be daily, weekly or monthly")}
-  #mediaVarCount <- length(listInput$set_mediaVarName)
   
   ################################################################
   #### model exposure metric from spend
@@ -598,9 +558,9 @@ robyn_engineering <- function(listInput = listInput
   if(!identical(all_name, all_mod_name)) {stop("Input variables must have unique names")}
   
   ## transform all factor variables
-  
-  if (length(listInput$set_factorVarName)>0) {
-    dt_transform[, (listInput$set_factorVarName):= as.factor(get(listInput$set_factorVarName)) ]
+  set_factorVarName <- listInput$set_factorVarName
+  if (length(set_factorVarName)>0) {
+    dt_transform[, (set_factorVarName):= lapply(.SD, as.factor), .SDcols = set_factorVarName ]
   } 
   
   ################################################################
@@ -640,55 +600,80 @@ robyn_engineering <- function(listInput = listInput
       
     }
     
-    modelRecurrance<- prophet(recurrance
-                              ,holidays = if(use_holiday) {holidays[country==listInput$set_prophetCountry]} else {NULL}
-                              ,yearly.seasonality = use_season
-                              ,weekly.seasonality = use_weekday
-                              ,daily.seasonality= F
-                              #,changepoint.range = 0.8
-                              #,seasonality.mode = 'multiplicative'
-                              #,changepoint.prior.scale = 0.1
-    )
     
-    #futureDS <- make_future_dataframe(modelRecurrance, periods=1, freq = listInput$intervalType)
-    forecastRecurrance <- predict(modelRecurrance, dt_transform[, "ds", with =F])
+    if (!is.null(set_factorVarName)) {
+      dt_regressors <- cbind(recurrance, dt_transform[, c(listInput$set_baseVarName, listInput$set_mediaVarName), with =F])
+      modelRecurrance <- prophet(holidays = if(use_holiday) {holidays[country==listInput$set_prophetCountry]} else {NULL}
+                                 ,yearly.seasonality = use_season
+                                 ,weekly.seasonality = use_weekday
+                                 ,daily.seasonality= F)
+      # for (addreg in set_factorVarName) {
+      #   modelRecurrance <- add_regressor(modelRecurrance, addreg)
+      # }
+      
+      dt_ohe <- as.data.table(model.matrix(y ~., dt_regressors[, c("y",set_factorVarName), with =F])[,-1])
+      ohe_names <- names(dt_ohe)
+      for (addreg in ohe_names) {
+        modelRecurrance <- add_regressor(modelRecurrance, addreg)
+      }
+      dt_ohe <- cbind(dt_regressors[, !set_factorVarName, with=F], dt_ohe)
+      mod_ohe <- fit.prophet(modelRecurrance, dt_ohe)
+      # prophet::regressor_coefficients(mxxx)
+      dt_forecastRegressor <- predict(mod_ohe, dt_ohe)
+      prophet_plot_components(mod_ohe, dt_forecastRegressor)
+      
+      forecastRecurrance <- dt_forecastRegressor[, str_detect(names(dt_forecastRegressor), "_lower$|_upper$", negate = T), with =F]
+      for (aggreg in  set_factorVarName) {
+        oheRegNames <- na.omit(str_extract(names(forecastRecurrance), paste0("^",aggreg, ".*")))
+        forecastRecurrance[, (aggreg):=rowSums(.SD), .SDcols=oheRegNames]
+        dt_transform[, (aggreg):=forecastRecurrance[, get(aggreg)] ]
+      }
+      # modelRecurrance <- fit.prophet(modelRecurrance, dt_regressors)
+      # forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",listInput$set_baseVarName, listInput$set_mediaVarName), with =F])
+      # prophet_plot_components(modelRecurrance, forecastRecurrance)
+      
+    } else {
+      modelRecurrance<- prophet(recurrance
+                                ,holidays = if(use_holiday) {holidays[country==listInput$set_prophetCountry]} else {NULL}
+                                ,yearly.seasonality = use_season
+                                ,weekly.seasonality = use_weekday
+                                ,daily.seasonality= F
+                                #,changepoint.range = 0.8
+                                #,seasonality.mode = 'multiplicative'
+                                #,changepoint.prior.scale = 0.1
+      )
+      
+      #futureDS <- make_future_dataframe(modelRecurrance, periods=1, freq = listInput$intervalType)
+      forecastRecurrance <- predict(modelRecurrance, dt_transform[, "ds", with =F])
+       
+    }
     
-    # if (use_regressor) {
-    #   m.recurrance <- cbind(recurrance, dt_transform[, c(listInput$set_baseVarName, listInput$set_mediaVarName), with =F])
-    #   modelRecurrance <- prophet(holidays = if(use_holiday) {holidays[country==listInput$set_prophetCountry]} else {NULL}
-    #                 ,yearly.seasonality = use_season
-    #                 ,weekly.seasonality = use_weekday 
-    #                 ,daily.seasonality= F)
-    #   for (addreg in c(listInput$set_baseVarName, listInput$set_mediaVarName)) {
-    #     modelRecurrance <- add_regressor(modelRecurrance, addreg)
-    #   }
-    #   modelRecurrance <- fit.prophet(modelRecurrance, m.recurrance)
-    #   forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",listInput$set_baseVarName, listInput$set_mediaVarName), with =F])
-    #   prophet_plot_components(modelRecurrance, forecastRecurrance)
-    # }
-    
-    #plot(modelRecurrance, forecastRecurrance)
-    #prophet_plot_components(modelRecurrance, forecastRecurrance, render_plot = T)
+    # plot(modelRecurrance, forecastRecurrance)
+    # prophet_plot_components(modelRecurrance, forecastRecurrance, render_plot = T)
     
     if (use_trend) {
       fc_trend <- forecastRecurrance$trend[1:NROW(recurrance)]
-      recurrance[, trend := scale(fc_trend, center = min(fc_trend), scale = F) + 1]
-      dt_transform[, trend := recurrance$trend]
+      dt_transform[, trend := fc_trend]
+      # recurrance[, trend := scale(fc_trend, center = min(fc_trend), scale = F) + 1]
+      # dt_transform[, trend := recurrance$trend]
     }
     if (use_season) {
       fc_season <- forecastRecurrance$yearly[1:NROW(recurrance)]
-      recurrance[, seasonal := scale(fc_season, center = min(fc_season), scale = F) + 1]
-      dt_transform[, season := recurrance$seasonal]
+      dt_transform[, season := fc_season]
+      # recurrance[, seasonal := scale(fc_season, center = min(fc_season), scale = F) + 1]
+      # dt_transform[, season := recurrance$seasonal]
     }
     if (use_weekday) {
       fc_weekday <- forecastRecurrance$weekly[1:NROW(recurrance)]
-      recurrance[, weekday := scale(fc_weekday, center = min(fc_weekday), scale = F) + 1]
-      dt_transform[, weekday := recurrance$weekday]
+      dt_transform[, weekday := fc_weekday]
+      # recurrance[, weekday := scale(fc_weekday, center = min(fc_weekday), scale = F) + 1]
+      # dt_transform[, weekday := recurrance$weekday]
     }
     if (use_holiday) {
       fc_holiday <- forecastRecurrance$holidays[1:NROW(recurrance)]
-      recurrance[, holidays := scale(fc_holiday, center = min(fc_holiday), scale = F) + 1]
-      dt_transform[, holiday := recurrance$holidays]
+      dt_transform[, holiday := fc_holiday]
+      # recurrance[, holidays := scale(fc_holiday, center = min(fc_holiday), scale = F) + 1]
+      # dt_transform[, holiday := recurrance$holidays]
     }
   }
   
@@ -725,7 +710,7 @@ robyn_engineering <- function(listInput = listInput
 ################################################################
 #### Define hyperparameter names extraction function
 
-f.getHyperNames <- function(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName) {
+hyper_names <- function(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName) {
   global_name <- c("thetas",  "shapes",  "scales",  "alphas",  "gammas",  "lambdas")
   if (adstock == "geometric") {
     local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
@@ -1074,7 +1059,7 @@ f.mmm <- function(...
   ################################################
   #### Collect hyperparameters
   
-  hypParamSamName <- f.getHyperNames(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName)
+  hypParamSamName <- hyper_names(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName)
   
   if (fixed.out==FALSE) {
     input.collect <- unlist(list(...), recursive = FALSE) # input.collect <- listInput$set_hyperBoundLocal
@@ -1671,7 +1656,7 @@ robyn_run <- function(listInput
   #### Run f.mmm on set_trials
   
   hyperparameter_fixed <- all(sapply(listInput$set_hyperBoundLocal, length)==1)
-  hypParamSamName <- f.getHyperNames(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName)
+  hypParamSamName <- hyper_names(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName)
   
   if (fixed.out == T) {
     
