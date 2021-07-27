@@ -124,7 +124,7 @@ robyn_allocator <- function(listInput
   alphas <- hillHypParVec[str_which(names(hillHypParVec), "_alphas")]
   gammas <- hillHypParVec[str_which(names(hillHypParVec), "_gammas")]
   
-  chnAdstocked <- listOutput$mediaVecCollect[type == "adstockedMedia", mediaVarSortedFiltered, with = F][startRW:endRW]
+  chnAdstocked <- listOutput$mediaVecCollect[type == "adstockedMedia" & solID == modID, mediaVarSortedFiltered, with = F][startRW:endRW]
   gammaTrans <- mapply(function(gamma, x) {round(quantile(seq(range(x)[1], range(x)[2], length.out = 100), gamma),4)}
                        ,gamma = gammas
                        ,x = chnAdstocked)
@@ -140,8 +140,9 @@ robyn_allocator <- function(listInput
     mm_lm_coefs <- c()
   }
   
-  # sl=1;coeff = coefs[sl]; alpha = alphas[sl]; gammaTran = gammaTrans[sl]; chnName = mediaVarSortedFiltered[sl]; vmax = vmaxVec[sl]; km = kmVec[sl]; criteria = costSelectorSortedFiltered[sl]
-  # coeff* f.hill(x=chnAdstocked[, get("facebook_I")], alpha = alpha, gamma = gammas[sl], x_marginal = f.micMen(x=Spend, Vmax=vmax, Km=km))
+  sl=4;coeff = coefs[sl]; alpha = alphas[sl]; gammaTran = gammaTrans[sl]; chnName = mediaVarSortedFiltered[sl]; vmax = vmaxVec[sl]; km = kmVec[sl]; criteria = costSelectorSortedFiltered[sl]
+  #coeff* f.hill(x=chnAdstocked[, get(chnName)], alpha = alpha, gamma = gammas[sl], x_marginal = f.micMen(x=256198.38, Vmax=vmax, Km=km))
+  coeff* f.hill(x=chnAdstocked[, get(chnName)], alpha = alpha, gamma = gammas[sl], x_marginal =257771.9)
   
   eval_f <- function(X) {
     return(
