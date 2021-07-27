@@ -10,11 +10,14 @@
 # DONE: adapt robyn_response
 # DONE: adapt prophet plot to be replaced & combine adstock plots
 # DONE: add bar plot for reporting
+# DONE: organic channels
+# add ROI report plot
 # returning pParFront, change cat() to message() for shiny
 # correlation matrix for f.inputDT, "reporting" of rolling results, channel detail plot for selecte model (mROI)
 # add pareto clustering
-# organic channels
+
 # adapt robyn_fixed
+# fix set_depVarType
 
 # Copyright (c) Facebook, Inc. and its affiliates.
 
@@ -81,7 +84,7 @@ registerDoSEQ(); detectCores()
 
 ## 3. set each hyperparameter bounds. They either contains two values e.g. c(0, 0.5), or only one value (in which case you've "fixed" that hyperparameter)
 set_adstock <- "geometric"
-set_mediaVarName <- c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I"	,"search_clicks_P") 
+set_mediaVarName <- c("tv_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P") 
 hyper_names(adstock = set_adstock, set_mediaVarName = set_mediaVarName)
 
 set_hyperBoundLocal <- list(
@@ -90,12 +93,6 @@ set_hyperBoundLocal <- list(
   ,facebook_I_thetas = c(0, 0.3) # example bounds for theta
   #,facebook_I_shapes = c(0.0001, 2) # example bounds for shape
   #,facebook_I_scales = c(0, 0.1) # example bounds for scale
-  
-  ,ooh_S_alphas = c(0.5, 3)
-  ,ooh_S_gammas = c(0.3, 1)
-  ,ooh_S_thetas = c(0.1, 0.4)
-  #,ooh_S_shapes = c(0.0001, 2)
-  #,ooh_S_scales = c(0, 0.1)
   
   ,print_S_alphas = c(0.5, 3)
   ,print_S_gammas = c(0.3, 1)
@@ -114,6 +111,12 @@ set_hyperBoundLocal <- list(
   ,search_clicks_P_thetas = c(0, 0.3)
   #,search_clicks_P_shapes = c(0.0001, 2)
   #,search_clicks_P_scales = c(0, 0.1)
+  
+  ,ooh_S_alphas = c(0.5, 3)
+  ,ooh_S_gammas = c(0.3, 1)
+  ,ooh_S_thetas = c(0.1, 0.4)
+  #,ooh_S_shapes = c(0.0001, 2)
+  #,ooh_S_scales = c(0, 0.1)
 )
 
 
@@ -121,6 +124,7 @@ listInput <- robyn_inputs(dt_input = dt_input
                          ,dt_holidays = dt_holidays
                          ,set_dateVarName = "DATE" # date format must be "2020-01-01"
                          ,set_depVarName = "revenue" # there should be only one dependent variable
+                         ,set_depVarType = "revenue"
                          
                          ,set_prophet = c("trend", "season", "holiday") # "trend","season", "weekday", "holiday" are provided and case-sensitive. Recommended to at least keep Trend & Holidays
                          ,set_prophetVarSign = c("default","default", "default") # c("default", "positive", and "negative"). Recommend as default. Must be same length as set_prophet
@@ -130,10 +134,11 @@ listInput <- robyn_inputs(dt_input = dt_input
                          ,set_baseVarSign = c("default", "default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
                          
                          ,set_mediaVarName = set_mediaVarName # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
-                         ,set_mediaVarSign = c("positive", "positive", "positive", "positive", "positive") # c("default", "positive", and "negative"), control the signs of coefficients for media variables
-                         ,set_mediaSpendName = c("tv_S"	,"ooh_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as set_mediaVarName
+                         ,set_mediaVarSign = c("positive", "positive", "positive", "positive") # c("default", "positive", and "negative"), control the signs of coefficients for media variables
+                         ,set_mediaSpendName = c("tv_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as set_mediaVarName
                          
-                         #,set_organicMedia
+                         ,set_organicMedia = c("ooh_S")
+                         ,set_organicSign = c("positive")
                          
                          ,set_factorVarName = c("events", "launches") # please specify which variable above should be factor
                          
@@ -173,12 +178,12 @@ plot_saturation(F) # s-curve transformation example plot, helping you understand
 ################################################################
 #### Run models
 
-listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, pareto_fronts =3, plot_pareto = F)
+listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, pareto_fronts =3, plot_pareto = T)
 
 ######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
 ## save selected model
 listOutput$allSolutions
-select_model <- "1_22_2"
+select_model <- "1_15_6"
 robyn_save(robyn_object = robyn_object, initModID = select_model, listInput = listInput, listOutput = listOutput)
 # load(robyn_object)
 
@@ -201,12 +206,12 @@ listAllocator <- robyn_allocator(listInput
                                  ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                                  #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
                                  #,expected_spend_days = 90 # specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
-                                 ,channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as set_mediaVarName
-                                 ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
+                                 ,channel_constr_low = c(0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as set_mediaVarName
+                                 ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
 )
 
 ## QA optimal response
-select_media <- "tv_S"
+select_media <- "facebook_I"
 optimal_spend <- listAllocator$dt_optimOut[channels== select_media, optmSpendUnit]
 optimal_response_allocator <- listAllocator$dt_optimOut[channels== select_media, optmResponseUnit]
 optimal_response <- robyn_response(robyn_object = robyn_object
@@ -224,7 +229,7 @@ round(optimal_response_allocator) == round(optimal_response); optimal_response_a
 Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
                        , dt_input = dt_input
                        , dt_holidays = dt_holidays
-                       , stepForward = 4 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
+                       , stepForward = 13 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
                        , refreshMode = "manual" # "auto" means the refresh function will move forward until no more data available
                        , refreshIter = 150 # iteration for refresh
                        , refreshTrial = 1 # trial for refresh

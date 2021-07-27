@@ -13,7 +13,7 @@ robyn_inputs <- function(dt_input
                          
                          ,set_dateVarName = NULL # date format must be "2020-01-01"
                          ,set_depVarName = NULL # there should be only one dependent variable
-                         #,set_depVarType = "revenue" # "revenue" or "conversion" are allowed
+                         ,set_depVarType = NULL # "revenue" or "conversion" are allowed
                          
                          ,set_prophet = NULL # "trend","season", "weekday", "holiday" are provided and case-sensitive. Recommended to at least keep Trend & Holidays
                          ,set_prophetVarSign = NULL # c("default", "positive", and "negative"). Recommend as default. Must be same length as set_prophet
@@ -25,6 +25,9 @@ robyn_inputs <- function(dt_input
                          ,set_mediaVarName = NULL # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
                          ,set_mediaVarSign = NULL # c("default", "positive", and "negative"), control the signs of coefficients for media variables
                          ,set_mediaSpendName = NULL # spends must have same order and same length as set_mediaVarName
+                         
+                         ,set_organicMedia = NULL
+                         ,set_organicSign = NULL
                          
                          ,set_factorVarName = NULL # please specify which variable above should be factor, otherwise leave empty c()
                          
@@ -108,7 +111,7 @@ robyn_inputs <- function(dt_input
     stop("set_baseVarSign must have same length as set_baseVarName. allowed values are 'positive', 'negative', 'default'")
   }
   
-  ## check media variables
+  ## check paid media variables
   mediaVarCount <- length(set_mediaVarName)
   spendVarCount <- length(set_mediaSpendName)
   if (is.null(set_mediaVarName) | is.null(set_mediaSpendName)) {
@@ -131,6 +134,24 @@ robyn_inputs <- function(dt_input
   }
   
   exposureVarName <- set_mediaVarName[!(set_mediaVarName==set_mediaSpendName)]
+  
+  ## check organic media variables
+  if (!all(set_organicMedia %in% names(dt_input)) ) {
+    stop("Provided set_organicMedia is not included in input data")
+  } else if (is.null(set_organicSign)) {
+    set_organicSign <- rep("positive", length(set_organicMedia))
+    message("set_organicSign is not provided. 'positive' is used")
+  } else if (length(set_organicSign) != length(set_organicMedia) | !all(set_organicSign %in% c("positive", "negative", "default"))) {
+    stop("set_organicSign must have same length as set_organicMedia. allowed values are 'positive', 'negative', 'default'")
+  }
+  
+  ## check all vars
+  all_media <- c(set_mediaVarName, set_organicMedia)
+  all_ind_vars <- unique(c(set_prophet, set_baseVarName, all_media #, set_keywordsVarName, set_mediaSpendName
+  ))
+  all_ind_vars_check <- c(set_prophet, set_baseVarName, all_media)
+  if(!identical(all_ind_vars, all_ind_vars_check)) {stop("Input variables must have unique names")}
+  
   
   ## check set_rollingWindowStartDate & set_rollingWindowEndDate
   if (is.null(set_rollingWindowStartDate)) {
@@ -170,7 +191,8 @@ robyn_inputs <- function(dt_input
   }
   
   rollingWindowLength <- rollingWindowEndWhich - rollingWindowStartWhich +1
-  dt_init <- dt_input[rollingWindowStartWhich:rollingWindowEndWhich, set_mediaVarName, with =F]
+  
+  dt_init <- dt_input[rollingWindowStartWhich:rollingWindowEndWhich, all_media, with =F]
   init_all0 <- colSums(dt_init)==0
   if(any(init_all0)) {
     stop("These media channels contains only 0 within training period ",dt_input[rollingWindowStartWhich, get(set_dateVarName)], " to ", dt_input[rollingWindowEndWhich, get(set_dateVarName)], ": ", paste(names(dt_init)[init_all0], collapse = ", ")
@@ -182,11 +204,12 @@ robyn_inputs <- function(dt_input
   if((adstock %in% c("geometric", "weibull")) == F) {stop("adstock must be 'geometric' or 'weibull'")}
   
   ## check hyperparameter names in set_hyperBoundLocal
+  
   global_name <- c("thetas",  "shapes",  "scales",  "alphas",  "gammas",  "lambdas")
   if (adstock == "geometric") {
-    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
+    local_name <- sort(apply(expand.grid(all_media, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
   } else if (adstock == "weibull") {
-    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
+    local_name <- sort(apply(expand.grid(all_media, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
   }
   
   if (is.null(set_hyperBoundLocal) | !identical(sort(names(set_hyperBoundLocal)), local_name)) {
@@ -218,7 +241,7 @@ robyn_inputs <- function(dt_input
                     ,intervalType=intervalType
                     
                     ,set_depVarName=set_depVarName
-                    #,set_depVarType=set_depVarType
+                    ,set_depVarType=set_depVarType
                     
                     #,activate_prophet=activate_prophet
                     ,set_prophet=set_prophet
@@ -234,6 +257,10 @@ robyn_inputs <- function(dt_input
                     ,set_mediaSpendName=set_mediaSpendName
                     ,mediaVarCount=mediaVarCount
                     ,exposureVarName=exposureVarName
+                    ,set_organicMedia=set_organicMedia
+                    ,set_organicSign=set_organicSign
+                    ,all_media=all_media
+                    ,all_ind_vars=all_ind_vars
                     
                     ,set_factorVarName=set_factorVarName
                     
@@ -409,8 +436,15 @@ f.unit_format <- function(x_in) {
 robyn_engineering <- function(listInput = listInput
                               , refresh = F) {
   
+  set_mediaVarName <- listInput$set_mediaVarName
+  set_mediaSpendName <- listInput$set_mediaSpendName
+  set_baseVarName <- listInput$set_baseVarName
+  set_organicMedia <- listInput$set_organicMedia
+  all_media <- listInput$all_media
+  all_ind_vars <- listInput$all_ind_vars
   
   dt_input <- copy(listInput$dt_input) # dt_input <- copy(listInput$dt_input)
+  
   dt_inputRollWind <- dt_input[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich] # dt_inputRollWind <- listInput$dt_input[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
   
   dt_transform <- copy(listInput$dt_input) # dt_transform <- copy(listInput$dt_input)
@@ -423,10 +457,10 @@ robyn_engineering <- function(listInput = listInput
   ################################################################
   #### model exposure metric from spend
   
-  mediaCostFactor <- unlist(dt_inputRollWind[, lapply(.SD, sum), .SDcols = listInput$set_mediaSpendName] / dt_inputRollWind[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName])
-  names(mediaCostFactor) <- listInput$set_mediaVarName
-  costSelector <- !(listInput$set_mediaSpendName == listInput$set_mediaVarName)
-  names(costSelector) <- listInput$set_mediaVarName
+  mediaCostFactor <- unlist(dt_inputRollWind[, lapply(.SD, sum), .SDcols = set_mediaSpendName] / dt_inputRollWind[, lapply(.SD, sum), .SDcols = set_mediaVarName])
+  names(mediaCostFactor) <- set_mediaVarName
+  costSelector <- !(set_mediaSpendName == set_mediaVarName)
+  names(costSelector) <- set_mediaVarName
   
   if (any(costSelector)) {
     modNLSCollect <- list()
@@ -434,7 +468,7 @@ robyn_engineering <- function(listInput = listInput
     plotNLSCollect <- list()
     for (i in 1:listInput$mediaVarCount) {
       if (costSelector[i]) {
-        dt_spendModInput <- dt_inputRollWind[, c(listInput$set_mediaSpendName[i],listInput$set_mediaVarName[i]), with =F]
+        dt_spendModInput <- dt_inputRollWind[, c(set_mediaSpendName[i],set_mediaVarName[i]), with =F]
         setnames(dt_spendModInput, names(dt_spendModInput), c("spend", "exposure"))
         #dt_spendModInput <- dt_spendModInput[spend !=0 & exposure != 0]
         
@@ -484,7 +518,7 @@ robyn_engineering <- function(listInput = listInput
             #                                  ,control = nls.control(warnOnly = T)))
             # warning("default start value for nls out of range. using c(1,1) instead")
             # return(modNLS)
-            message("michaelis menten fitting for ", listInput$set_mediaVarName[i]," out of range. using lm instead")
+            message("michaelis menten fitting for ", set_mediaVarName[i]," out of range. using lm instead")
             
           }
         )
@@ -494,12 +528,12 @@ robyn_engineering <- function(listInput = listInput
         yhatLM <- predict(modLM)
         modLMSum <- summary(modLM)
         rsq_lm <- f.rsq(dt_spendModInput$exposure, yhatLM) 
-        if (is.na(rsq_lm)) {stop("please check if ",listInput$set_mediaVarName[i]," constains only 0")}
+        if (is.na(rsq_lm)) {stop("please check if ",set_mediaVarName[i]," constains only 0")}
         
         # compare NLS & LM, takes LM if NLS fits worse
         costSelector[i] <- if(is.null(rsq_nls)) {FALSE} else {rsq_nls > rsq_lm}
         
-        modNLSCollect[[listInput$set_mediaVarName[i]]] <- data.table(channel = listInput$set_mediaVarName[i],
+        modNLSCollect[[set_mediaVarName[i]]] <- data.table(channel = set_mediaVarName[i],
                                                                      Vmax = if (!is.null(modNLS)) {modNLSSum$coefficients[1,1]} else {NA},
                                                                      Km =  if (!is.null(modNLS)) {modNLSSum$coefficients[2,1]} else {NA},
                                                                      aic_nls = if (!is.null(modNLS)) {AIC(modNLS)} else {NA},
@@ -511,7 +545,7 @@ robyn_engineering <- function(listInput = listInput
                                                                      coef_lm = coef(modLMSum)[1]
         )
         
-        dt_plotNLS <- data.table(channel = listInput$set_mediaVarName[i],
+        dt_plotNLS <- data.table(channel = set_mediaVarName[i],
                                  yhatNLS = if(costSelector[i]) {yhatNLS} else {yhatLM},
                                  yhatLM = yhatLM,
                                  y = dt_spendModInput$exposure,
@@ -519,13 +553,13 @@ robyn_engineering <- function(listInput = listInput
         dt_plotNLS <- melt.data.table(dt_plotNLS, id.vars = c("channel", "y", "x"), variable.name = "models", value.name = "yhat")
         dt_plotNLS[, models:= str_remove(tolower(models), "yhat")]
         
-        yhatCollect[[listInput$set_mediaVarName[i]]] <- dt_plotNLS
+        yhatCollect[[set_mediaVarName[i]]] <- dt_plotNLS
         
         # create plot
-        plotNLSCollect[[listInput$set_mediaVarName[i]]] <- ggplot(dt_plotNLS, aes(x=x, y=y, color = models)) +
+        plotNLSCollect[[set_mediaVarName[i]]] <- ggplot(dt_plotNLS, aes(x=x, y=y, color = models)) +
           geom_point() +
           geom_line(aes(y=yhat, x=x, color = models)) +
-          labs(subtitle = paste0("y=",listInput$set_mediaVarName[i],", x=", listInput$set_mediaSpendName[i],
+          labs(subtitle = paste0("y=",set_mediaVarName[i],", x=", set_mediaSpendName[i],
                                  "\nnls: aic=", round(AIC(if(costSelector[i]) {modNLS} else {modLM}),0), ", rsq=", round(if(costSelector[i]) {rsq_nls} else {rsq_lm},4),
                                  "\nlm: aic= ", round(AIC(modLM),0), ", rsq=", round(rsq_lm,4)),
                x = "spend",
@@ -546,17 +580,12 @@ robyn_engineering <- function(listInput = listInput
     yhatNLSCollect <- NULL
   }
   
-  getSpendSum <- dt_input[, lapply(.SD, sum), .SDcols=listInput$set_mediaSpendName]
-  names(getSpendSum) <- listInput$set_mediaVarName
-  getSpendSum <- suppressWarnings(melt.data.table(getSpendSum, measure.vars= listInput$set_mediaVarName, variable.name = "rn", value.name = "spend"))
+  getSpendSum <- dt_input[, lapply(.SD, sum), .SDcols=set_mediaSpendName]
+  names(getSpendSum) <- set_mediaVarName
+  getSpendSum <- suppressWarnings(melt.data.table(getSpendSum, measure.vars= set_mediaVarName, variable.name = "rn", value.name = "spend"))
   
   ################################################################
   #### clean & aggregate data
-  
-  all_name <- unique(c("ds", "depVar", listInput$set_prophet, listInput$set_baseVarName, listInput$set_mediaVarName #, set_keywordsVarName, listInput$set_mediaSpendName
-  ))
-  all_mod_name <- c("ds", "depVar", listInput$set_prophet, listInput$set_baseVarName, listInput$set_mediaVarName)
-  if(!identical(all_name, all_mod_name)) {stop("Input variables must have unique names")}
   
   ## transform all factor variables
   set_factorVarName <- listInput$set_factorVarName
@@ -603,7 +632,7 @@ robyn_engineering <- function(listInput = listInput
     
     
     if (!is.null(set_factorVarName)) {
-      dt_regressors <- cbind(recurrance, dt_transform[, c(listInput$set_baseVarName, listInput$set_mediaVarName), with =F])
+      dt_regressors <- cbind(recurrance, dt_transform[, c(set_baseVarName, set_mediaVarName), with =F])
       modelRecurrance <- prophet(holidays = if(use_holiday) {holidays[country==listInput$set_prophetCountry]} else {NULL}
                                  ,yearly.seasonality = use_season
                                  ,weekly.seasonality = use_weekday
@@ -630,7 +659,7 @@ robyn_engineering <- function(listInput = listInput
         dt_transform[, (aggreg):=forecastRecurrance[, get(aggreg)] ]
       }
       # modelRecurrance <- fit.prophet(modelRecurrance, dt_regressors)
-      # forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",listInput$set_baseVarName, listInput$set_mediaVarName), with =F])
+      # forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",set_baseVarName, set_mediaVarName), with =F])
       # prophet_plot_components(modelRecurrance, forecastRecurrance)
       
     } else {
@@ -682,11 +711,12 @@ robyn_engineering <- function(listInput = listInput
   #### Finalize input
   
   #dt <- dt[, all_name, with = F]
-  dt_transform <- dt_transform[, all_mod_name, with = F]
+  dt_transform <- dt_transform[, c("ds", "depVar", all_ind_vars), with = F]
   
   listInput$dt_mod <- dt_transform
   listInput$dt_modRollWind <- dt_transform[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
   listInput$dt_inputRollWind <- dt_inputRollWind
+  listInput$all_media <- all_media
   
   listInput[['modNLSCollect']] <- modNLSCollect
   listInput[['plotNLSCollect']] <- plotNLSCollect  
@@ -711,12 +741,12 @@ robyn_engineering <- function(listInput = listInput
 ################################################################
 #### Define hyperparameter names extraction function
 
-hyper_names <- function(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName) {
+hyper_names <- function(adstock = listInput$adstock, all_media=listInput$all_media) {
   global_name <- c("thetas",  "shapes",  "scales",  "alphas",  "gammas",  "lambdas")
   if (adstock == "geometric") {
-    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
+    local_name <- sort(apply(expand.grid(all_media, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
   } else if (adstock == "weibull") {
-    local_name <- sort(apply(expand.grid(set_mediaVarName, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
+    local_name <- sort(apply(expand.grid(all_media, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
   }
   return(local_name)
 }
@@ -1007,7 +1037,7 @@ f.mmm <- function(...
   ################################################
   #### Collect hyperparameters
   
-  hypParamSamName <- hyper_names(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName)
+  hypParamSamName <- hyper_names(adstock = listInput$adstock, all_media =listInput$all_media)
   
   if (fixed.out==FALSE) {
     input.collect <- unlist(list(...), recursive = FALSE) # input.collect <- listInput$set_hyperBoundLocal
@@ -1068,10 +1098,15 @@ f.mmm <- function(...
   
   set_mediaVarName <- listInput$set_mediaVarName
   set_mediaSpendName <- listInput$set_mediaSpendName
+  set_organicMedia <- listInput$set_organicMedia
+  set_baseVarName <- listInput$set_baseVarName
+  set_prophet <- listInput$set_prophet
   adstock <- listInput$adstock
   set_baseVarSign <- listInput$set_baseVarSign
   set_mediaVarSign <- listInput$set_mediaVarSign
   set_prophetVarSign <- listInput$set_prophetVarSign
+  set_organicSign <- listInput$set_organicSign
+  all_media <- listInput$all_media
   #set_factorVarName <- listInput$set_factorVarName
   set_lift <- listInput$set_lift
   optimizer_name <- listInput$set_hyperOptimAlgo
@@ -1244,21 +1279,21 @@ f.mmm <- function(...
         mediaAdstocked <- list()
         mediaVecCum <- list()
         mediaSaturated <- list()
-        for (v in 1:length(set_mediaVarName)) {
+        for (v in 1:length(all_media)) {
           
-          m <- dt_modAdstocked[, get(set_mediaVarName[v])]
+          m <- dt_modAdstocked[, get(all_media[v])]
           
           ## adstocking
           
           if (adstock == "geometric") {
             
-            theta = hypParamSam[paste0(set_mediaVarName[v],"_thetas")]
+            theta = hypParamSam[paste0(all_media[v],"_thetas")]
             x_list <- f.adstockGeometric(x=m, theta = theta)
             
           } else if (adstock == "weibull") {
             
-            shape = hypParamSam[paste0(set_mediaVarName[v],"_shapes")]
-            scale = hypParamSam[paste0(set_mediaVarName[v],"_scales")]
+            shape = hypParamSam[paste0(all_media[v],"_shapes")]
+            scale = hypParamSam[paste0(all_media[v],"_scales")]
             x_list <- f.adstockWeibull(x=m, shape = shape, scale=scale)
             
           } else {break; print("adstock parameter must be geometric or weibull")}
@@ -1270,18 +1305,18 @@ f.mmm <- function(...
           ## saturation
           m_adstockedRollWind <- m_adstocked[rollingWindowStartWhich:rollingWindowEndWhich]
           
-          alpha = hypParamSam[paste0(set_mediaVarName[v],"_alphas")]
-          gamma = hypParamSam[paste0(set_mediaVarName[v],"_gammas")]
+          alpha = hypParamSam[paste0(all_media[v],"_alphas")]
+          gamma = hypParamSam[paste0(all_media[v],"_gammas")]
           mediaSaturated[[v]] <- f.hill(m_adstockedRollWind, alpha = alpha, gamma = gamma)
         }
         
-        names(mediaAdstocked) <- set_mediaVarName
-        dt_modAdstocked[, (set_mediaVarName) := mediaAdstocked]
-        dt_mediaVecCum <- data.table()[, (set_mediaVarName):= mediaVecCum]
+        names(mediaAdstocked) <- all_media
+        dt_modAdstocked[, (all_media) := mediaAdstocked]
+        dt_mediaVecCum <- data.table()[, (all_media):= mediaVecCum]
         
-        names(mediaSaturated) <- set_mediaVarName
+        names(mediaSaturated) <- all_media
         dt_modSaturated <- dt_modAdstocked[rollingWindowStartWhich:rollingWindowEndWhich]
-        dt_modSaturated[, (set_mediaVarName) := mediaSaturated]
+        dt_modSaturated[, (all_media) := mediaSaturated]
         
         #####################################
         #### Split and prepare data for modelling
@@ -1306,7 +1341,8 @@ f.mmm <- function(...
         ## define sign control
         dt_sign <- dt_modSaturated[, !"depVar"] #names(dt_sign)
         #x_sign <- if (activate_prophet) {c(set_prophetVarSign, set_baseVarSign, set_mediaVarSign)} else {c(set_baseVarSign, set_mediaVarSign)}
-        x_sign <- c(set_prophetVarSign, set_baseVarSign, set_mediaVarSign)
+        x_sign <- c(set_prophetVarSign, set_baseVarSign, set_mediaVarSign, set_organicSign)
+        names(x_sign) <- c(set_prophet, set_baseVarName, set_mediaVarName, set_organicMedia)
         check_factor <- sapply(dt_sign, is.factor)
         
         lower.limits <- c(); upper.limits <- c()
@@ -1401,9 +1437,9 @@ f.mmm <- function(...
           dt_decompSpendDist[, effect_share:=0]
         }
         
-        ## adstock objective: sum of squared infinite sum of decay to be minimised? maybe not necessary
-        dt_decaySum <- dt_mediaVecCum[,  .(rn = set_mediaVarName, decaySum = sapply(.SD, sum)), .SDcols = set_mediaVarName]
-        adstock.ssisd <- dt_decaySum[, sum(decaySum^2)]
+        ## adstock objective: sum of squared infinite sum of decay to be minimised - deprecated
+        # dt_decaySum <- dt_mediaVecCum[,  .(rn = all_media, decaySum = sapply(.SD, sum)), .SDcols = all_media]
+        # adstock.ssisd <- dt_decaySum[, sum(decaySum^2)]
         
         ## calibration objective: not calibration: mse, decomp.rssd, if calibration: mse, decom.rssd, mape_lift
         
@@ -1416,7 +1452,7 @@ f.mmm <- function(...
           resultHypParam = resultHypParam[, ':='(mape = mape
                                                  ,nrmse = nrmse
                                                  ,decomp.rssd = decomp.rssd
-                                                 ,adstock.ssisd = adstock.ssisd
+                                                 #,adstock.ssisd = adstock.ssisd
                                                  ,rsq_train = mod_out$rsq_train
                                                  #,rsq_test = mod_out$rsq_test
                                                  ,pos = prod(decompCollect$xDecompAgg$pos)
@@ -1430,7 +1466,7 @@ f.mmm <- function(...
                                                                             ,mape = mape
                                                                             ,nrmse = nrmse
                                                                             ,decomp.rssd = decomp.rssd
-                                                                            ,adstock.ssisd = adstock.ssisd
+                                                                            #,adstock.ssisd = adstock.ssisd
                                                                             ,rsq_train = mod_out$rsq_train
                                                                             #,rsq_test = mod_out$rsq_test
                                                                             ,lambda=lambda
@@ -1439,7 +1475,7 @@ f.mmm <- function(...
           xDecompAgg = decompCollect$xDecompAgg[, ':='(mape = mape
                                                        ,nrmse = nrmse
                                                        ,decomp.rssd = decomp.rssd
-                                                       ,adstock.ssisd = adstock.ssisd
+                                                       #,adstock.ssisd = adstock.ssisd
                                                        ,rsq_train = mod_out$rsq_train
                                                        #,rsq_test = mod_out$rsq_test
                                                        ,lambda=lambda
@@ -1448,7 +1484,7 @@ f.mmm <- function(...
           liftCalibration = if (nrow(set_lift)>0) {liftCollect[, ':='(mape = mape
                                                                       ,nrmse = nrmse
                                                                       ,decomp.rssd = decomp.rssd
-                                                                      ,adstock.ssisd = adstock.ssisd
+                                                                      #,adstock.ssisd = adstock.ssisd
                                                                       ,rsq_train = mod_out$rsq_train
                                                                       #,rsq_test = mod_out$rsq_test
                                                                       ,lambda=lambda
@@ -1457,7 +1493,7 @@ f.mmm <- function(...
           decompSpendDist = dt_decompSpendDist[, ':='(mape = mape
                                                       ,nrmse = nrmse
                                                       ,decomp.rssd = decomp.rssd
-                                                      ,adstock.ssisd = adstock.ssisd
+                                                      #,adstock.ssisd = adstock.ssisd
                                                       ,rsq_train = mod_out$rsq_train
                                                       #,rsq_test = mod_out$rsq_test
                                                       ,lambda=lambda
@@ -1605,7 +1641,7 @@ robyn_run <- function(listInput
   #### Run f.mmm on set_trials
   
   hyperparameter_fixed <- all(sapply(listInput$set_hyperBoundLocal, length)==1)
-  hypParamSamName <- hyper_names(adstock = listInput$adstock, set_mediaVarName=listInput$set_mediaVarName)
+  hypParamSamName <- hyper_names(adstock = listInput$adstock, all_media=listInput$all_media)
   
   if (fixed.out == T) {
     
@@ -1846,7 +1882,7 @@ robyn_run <- function(listInput
     
     
     ## plot Pareto front
-    if (length(listInput$set_lift)>0) {resultHypParam[, iterations:= ifelse(is.na(robynPareto), NA, iterations)]}
+    if (nrow(listInput$set_lift)>0) {resultHypParam[, iterations:= ifelse(is.na(robynPareto), NA, iterations)]}
     pParFront <- ggplot(data = resultHypParam, aes(x=nrmse, y=decomp.rssd, color = iterations)) +
       geom_point(size = 0.5) +
       #stat_smooth(data = resultHypParam, method = 'gam', formula = y ~ s(x, bs = "cs"), size = 0.2, fill = "grey100", linetype="dashed")+
@@ -1854,7 +1890,7 @@ robyn_run <- function(listInput
       #geom_line(data = resultHypParam[robynPareto ==2], aes(x=nrmse, y=decomp.rssd), colour = "coral3")+
       #geom_line(data = resultHypParam[robynPareto ==3], aes(x=nrmse, y=decomp.rssd), colour = "coral")+
       scale_colour_gradient(low = "navyblue", high = "skyblue") +
-      labs(title=ifelse(length(listInput$set_lift)==0, "Model selection", "Model selection with top 10% calibration"),
+      labs(title=ifelse(nrow(listInput$set_lift)==0, "Model selection", "Model selection with top 10% calibration"),
            subtitle=paste0("2D Pareto front 1-3 with ",listInput$set_hyperOptimAlgo,", iterations = ", listInput$set_iter , " * ", listInput$set_trial, " trials"),
            x="NRMSE",
            y="DECOMP.RSSD")
@@ -1906,7 +1942,7 @@ robyn_run <- function(listInput
       rsq_train_plot <- plotMediaShareLoop[, round(unique(rsq_train),4)]
       nrmse_plot <- plotMediaShareLoop[, round(unique(nrmse),4)]
       decomp_rssd_plot <- plotMediaShareLoop[, round(unique(decomp.rssd),4)]
-      mape_lift_plot <- ifelse(!is.null(listInput$set_lift), plotMediaShareLoop[, round(unique(mape),4)], NA)
+      mape_lift_plot <- ifelse(nrow(listInput$set_lift)>0, plotMediaShareLoop[, round(unique(mape),4)], NA)
       
       plotMediaShareLoop <- melt.data.table(plotMediaShareLoop, id.vars = c("rn", "nrmse", "decomp.rssd", "rsq_train" ), measure.vars = c("spend_share", "effect_share", "roi"))
       plotMediaShareLoop[, rn:= factor(rn, levels = sort(listInput$set_mediaVarName))]
@@ -1964,12 +2000,12 @@ robyn_run <- function(listInput
       resultHypParamLoop <- resultHypParam[solID == uniqueSol[j]]
       
       hypParam <- unlist(resultHypParamLoop[, listInput$local_name, with =F])
-      dt_transformPlot <- dt_mod[, c("ds", listInput$set_mediaVarName), with =F] # independent variables
+      dt_transformPlot <- dt_mod[, c("ds", listInput$all_media), with =F] # independent variables
       dt_transformSpend <- cbind(dt_transformPlot[,.(ds)], listInput$dt_input[, c(listInput$set_mediaSpendName), with =F]) # spends of indep vars
       setnames(dt_transformSpend, names(dt_transformSpend), c("ds", listInput$set_mediaVarName))
       
       # update non-spend variables
-      dt_transformSpendMod <- dt_transformPlot[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
+      dt_transformSpendMod <- dt_transformPlot[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich, c("ds", listInput$set_mediaVarName), with=F ]
       if (length(listInput$exposureVarName)>0) {
         for (expo in listInput$exposureVarName) {
           sel_nls <- ifelse(listInput$modNLSCollect[channel == expo, rsq_nls>rsq_lm],"nls","lm")
@@ -1983,22 +2019,22 @@ robyn_run <- function(listInput
       
       m_decayRate <- list()
       
-      for (med in 1:listInput$mediaVarCount) {
+      for (med in 1:length(listInput$all_media)) {
         
-        med_select <- listInput$set_mediaVarName[med]
+        med_select <- listInput$all_media[med]
         m <- dt_transformPlot[, get(med_select)]
         
         
         ## adstocking
         if (listInput$adstock == "geometric") {
           
-          theta <- hypParam[paste0(listInput$set_mediaVarName[med], "_thetas")]
+          theta <- hypParam[paste0(listInput$all_media[med], "_thetas")]
           x_list <- f.adstockGeometric(x=m, theta = theta)
           
         } else if (listInput$adstock == "weibull") {
           
-          shape <- hypParam[paste0(listInput$set_mediaVarName[med], "_shapes")]
-          scale <- hypParam[paste0(listInput$set_mediaVarName[med], "_scales")]
+          shape <- hypParam[paste0(listInput$all_media[med], "_shapes")]
+          scale <- hypParam[paste0(listInput$all_media[med], "_scales")]
           x_list <- f.adstockWeibull(x=m, shape = shape, scale = scale)
           
         }
@@ -2007,18 +2043,18 @@ robyn_run <- function(listInput
         m_adstockedRollWind <- m_adstocked[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
         
         ## saturation
-        alpha <- hypParam[paste0(listInput$set_mediaVarName[med], "_alphas")]
-        gamma <- hypParam[paste0(listInput$set_mediaVarName[med], "_gammas")]
+        alpha <- hypParam[paste0(listInput$all_media[med], "_alphas")]
+        gamma <- hypParam[paste0(listInput$all_media[med], "_gammas")]
         dt_transformSaturation[, (med_select):= f.hill(x=m_adstockedRollWind, alpha = alpha, gamma = gamma)] 
         
         m_decayRate[[med]] <- data.table(x_list$thetaVecCum)
-        setnames(m_decayRate[[med]], "V1", paste0(listInput$set_mediaVarName[med], "_decayRate"))
+        setnames(m_decayRate[[med]], "V1", paste0(listInput$all_media[med], "_decayRate"))
         
       } 
       
       m_decayRate <- data.table(cbind(sapply(m_decayRate, function(x) sapply(x, function(y)y))))
-      setnames(m_decayRate, names(m_decayRate), listInput$set_mediaVarName)
-      m_decayRateSum <- m_decayRate[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName]
+      setnames(m_decayRate, names(m_decayRate), listInput$all_media)
+      m_decayRateSum <- m_decayRate[, lapply(.SD, sum), .SDcols = listInput$all_media]
       
       decayRate.melt <- suppressWarnings(melt.data.table(m_decayRateSum))
       
@@ -2037,7 +2073,7 @@ robyn_run <- function(listInput
         decayOut[i] <- decayVec[which.min(abs(decayRate.melt$value[i] - decayInfSum))]
       }
       decayRate.melt[, avg_decay_rate:= decayOut]
-      decayRate.melt[, variable:= factor(variable, levels = sort(listInput$set_mediaVarName))]
+      decayRate.melt[, variable:= factor(variable, levels = sort(listInput$all_media))]
       
       p3 <- ggplot(decayRate.melt, aes(x=variable, y=avg_decay_rate, fill = "coral")) +
         geom_bar(stat = "identity", width = 0.5) +
@@ -2056,13 +2092,13 @@ robyn_run <- function(listInput
       
       dt_transformSaturationDecomp <- copy(dt_transformSaturation)
       for (i in 1:listInput$mediaVarCount) {
-        coef <- plotWaterfallLoop[rn == listInput$set_mediaVarName[i], coef]
-        dt_transformSaturationDecomp[, (listInput$set_mediaVarName[i]):= .SD * coef, .SDcols = listInput$set_mediaVarName[i]]
+        coef <- plotWaterfallLoop[rn == listInput$all_media[i], coef]
+        dt_transformSaturationDecomp[, (listInput$all_media[i]):= .SD * coef, .SDcols = listInput$all_media[i]]
       }
       
       #mediaAdstockFactorPlot <- dt_transformPlot[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName]  / dt_transformAdstock[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName]
       #dt_transformSaturationAdstockReverse <- data.table(mapply(function(x, y) {x*y},x= dt_transformAdstock[, listInput$set_mediaVarName, with=F], y= mediaAdstockFactorPlot))
-      dt_transformSaturationSpendReverse <- copy(dt_transformAdstock)
+      dt_transformSaturationSpendReverse <- copy(dt_transformAdstock[, !listInput$set_organicMedia, with=F])
       
       for (i in 1:listInput$mediaVarCount) {
         chn <- listInput$set_mediaVarName[i]
@@ -2086,7 +2122,7 @@ robyn_run <- function(listInput
       
       dt_transformSaturationSpendReverse <- dt_transformSaturationSpendReverse[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
       
-      dt_scurvePlot <- cbind(melt.data.table(dt_transformSaturationDecomp, id.vars = "ds", variable.name = "channel",value.name = "response"),
+      dt_scurvePlot <- cbind(melt.data.table(dt_transformSaturationDecomp[, !listInput$set_organicMedia, with=F], id.vars = "ds", variable.name = "channel",value.name = "response"),
                              melt.data.table(dt_transformSaturationSpendReverse, id.vars = "ds", value.name = "spend")[, .(spend)])
       dt_scurvePlot <- dt_scurvePlot[spend>=0] # remove outlier introduced by MM nls fitting
       
@@ -2144,12 +2180,11 @@ robyn_run <- function(listInput
       ## plot fitted vs actual
       
       if(!is.null(listInput$set_prophet)) {
-        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listInput$set_prophet, listInput$set_baseVarName), with=F], dt_transformSaturation[, listInput$set_mediaVarName, with=F])
-        col_order <- c("ds", "depVar", listInput$set_prophet, listInput$set_baseVarName, listInput$set_mediaVarName)
+        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listInput$set_prophet, listInput$set_baseVarName), with=F], dt_transformSaturation[, listInput$all_media, with=F])
       } else {
-        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listInput$set_baseVarName), with=F], dt_transformSaturation[, listInput$set_mediaVarName, with=F])
-        col_order <- c("ds", "depVar", listInput$set_baseVarName, listInput$set_mediaVarName)
+        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", listInput$set_baseVarName), with=F], dt_transformSaturation[, listInput$all_media, with=F])
       }
+      col_order <- c("ds", "depVar", listInput$all_ind_vars)
       setcolorder(dt_transformDecomp, neworder = col_order)
       
       xDecompVec <- dcast.data.table(xDecompAgg[solID==uniqueSol[j], .(rn, coef, solID)],  solID ~ rn, value.var = "coef")
@@ -2188,9 +2223,9 @@ robyn_run <- function(listInput
       
       ## save and aggregate one-pager plots
       
-      modID <- paste0("Model one-pager, on pareto front ", pf,", ID: ", uniqueSol[j])
+      onepagerTitle <- paste0("Model one-pager, on pareto front ", pf,", ID: ", uniqueSol[j])
       
-      pg <- arrangeGrob(p2,p5,p1, p4, p3, p6, ncol=2, top = text_grob(modID, size = 15, face = "bold"))
+      pg <- arrangeGrob(p2,p5,p1, p4, p3, p6, ncol=2, top = text_grob(onepagerTitle, size = 15, face = "bold"))
       # grid.draw(pg)
       if (plot_pareto) {
         ggsave(filename=paste0(plot_folder, "/", plot_folder_sub,"/", uniqueSol[j],".png")
@@ -2201,7 +2236,9 @@ robyn_run <- function(listInput
       }
       
       ## prepare output
-      
+      dt_transformSpend[, (listInput$set_organicMedia):= NA]
+      dt_transformSpendMod[, (listInput$set_organicMedia):= NA]
+      dt_transformSaturationSpendReverse[, (listInput$set_organicMedia):= NA]
       
       mediaVecCollect[[cnt]] <- rbind(dt_transformPlot[, ':='(type="rawMedia", solID=uniqueSol[j])]
                                       ,dt_transformSpend[, ':='(type="rawSpend", solID=uniqueSol[j])]
