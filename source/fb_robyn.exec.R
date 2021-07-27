@@ -226,7 +226,7 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
                        , dt_holidays = dt_holidays
                        , stepForward = 4 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
                        , refreshMode = "manual" # "auto" means the refresh function will move forward until no more data available
-                       , refreshIter = 200 # iteration for refresh
+                       , refreshIter = 150 # iteration for refresh
                        , refreshTrial = 1 # trial for refresh
 )
 

@@ -2649,7 +2649,7 @@ robyn_refresh <- function(robyn_object
     
     ggsave(filename=paste0(listOutputRefresh$plot_folder,"report_actual_fitted.png")
            , plot = pFitRF
-           , dpi = 600, width = 9, height = 6)
+           , dpi = 900, width = 12, height = 8)
     
     ## stacked bar plot
     
@@ -2657,12 +2657,16 @@ robyn_refresh <- function(robyn_object
     xDecompAggReportPlotBase <- xDecompAggReportPlotBase[, .(variable = "baseline", percentage = sum(xDecompMeanNon0PercRF)), by = refreshStatus]
     xDecompAggReportPlot <- xDecompAggReport[!(rn %in% c(listInputRefresh$set_prophet,"(Intercept)")), .(refreshStatus, variable=rn, percentage=xDecompMeanNon0PercRF )]
     xDecompAggReportPlot <- rbind(xDecompAggReportPlot, xDecompAggReportPlotBase)[order(refreshStatus, -variable)]
+    xDecompAggReportPlot[, refreshStatus:=ifelse(refreshStatus==0, "init.mod", paste0("refresh",refreshStatus))]
 
-    pBarRF <- ggplot(data=xDecompAggReportPlot, mapping=aes(y= percentage,x=refreshStatus, fill=variable)) +
+    pBarRF <- ggplot(data=xDecompAggReportPlot, mapping=aes(y= percentage,x=variable, fill=variable)) +
       geom_bar(alpha=0.8, position="dodge", stat="identity") +
+      facet_wrap(~refreshStatus,scales = "free_x") +
+      scale_y_continuous(breaks = seq(0, 1, 0.2), limits = c(0,1)) +
+      coord_flip() +
       scale_fill_brewer(palette = 'BrBG') +
-      geom_text(aes(label = paste0(round(percentage*100,1),"%")) 
-                ,position=position_dodge(width=0.9), vjust=-0.25) +
+      geom_text(aes(label = paste0(round(percentage*100,1),"%")), size = 3 
+                ,position=position_dodge(width=0.9), hjust=-0.25) +
       labs(title="Model refresh decomposition"
            ,subtitle = "baseline includes intercept and all prophet variables")
     
@@ -2671,7 +2675,7 @@ robyn_refresh <- function(robyn_object
    # pReport <- arrangeGrob(pFitRF,pBarRF, ncol=1, top = text_grob("Robyn report onepaper", size = 15, face = "bold"))
     ggsave(filename=paste0(listOutputRefresh$plot_folder,"report_decomposition.png")
            , plot = pBarRF
-           , dpi = 600, width = 9, height = 6)
+           , dpi = 900, width = 12, height = 8)
     
     
     #### save result objects
