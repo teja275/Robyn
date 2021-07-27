@@ -172,12 +172,13 @@ plot_saturation(F) # s-curve transformation example plot, helping you understand
 ################################################################
 #### Run models
 
-listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, pareto_fronts =3, plot_pareto = FALSE)
+listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, pareto_fronts =3, plot_pareto = F)
 
 ######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
 ## save selected model
 listOutput$allSolutions
-robyn_save(robyn_object = robyn_object, initModID = "1_7_5", listInput = listInput, listOutput = listOutput)
+select_model <- "1_21_5"
+robyn_save(robyn_object = robyn_object, initModID = select_model, listInput = listInput, listOutput = listOutput)
 # load(robyn_object)
 
 ## THIS PART IS NOT YET ADAPTED!! reload old models from csv
@@ -190,12 +191,11 @@ robyn_save(robyn_object = robyn_object, initModID = "1_7_5", listInput = listInp
 ## Budget allocator result requires further validation. Please use this result with caution.
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
-listOutput$allSolutions
-listOutput$xDecompAgg[solID == "1_7_5" & !is.na(mean_spend), .(rn, mean_spend, mean_response, roi)] #check media summary for selected model
+listOutput$xDecompAgg[solID == select_model & !is.na(mean_spend), .(rn, coef,mean_spend, mean_response, roi, solID)] #check media summary for selected model
 
 listAllocator <- robyn_allocator(listInput
                                  ,listOutput
-                                 ,modID = "1_7_5" # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+                                 ,modID = select_model # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
                                  ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
                                  ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                                  #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
@@ -223,9 +223,9 @@ round(optimal_response_allocator) == round(optimal_response)
 Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
                        , dt_input = dt_input
                        , dt_holidays = dt_holidays
-                       , stepForward = 13 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
+                       , stepForward = 26 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
                        , refreshMode = "auto" # "auto" means the refresh function will move forward until no more data available
-                       , refreshIter = 100 # iteration for refresh
+                       , refreshIter = 200 # iteration for refresh
                        , refreshTrial = 1 # trial for refresh
 )
 

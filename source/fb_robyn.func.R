@@ -1424,7 +1424,8 @@ f.mmm <- function(...
                                                  ,ElapsedAccum = as.numeric(difftime(Sys.time(),t0, units = "secs"))
                                                  ,iterPar= i
                                                  ,iterNG = lng)],
-          xDecompVec = if (fixed.out == T) {decompCollect$xDecompVec[, ':='(mape = mape
+          xDecompVec = if (fixed.out == T) {decompCollect$xDecompVec[, ':='(intercept = decompCollect$xDecompAgg[rn=="(Intercept)", xDecompAgg]
+                                                                            ,mape = mape
                                                                             ,nrmse = nrmse
                                                                             ,decomp.rssd = decomp.rssd
                                                                             ,adstock.ssisd = adstock.ssisd
@@ -1564,12 +1565,12 @@ f.mmm <- function(...
 #### Define robyn_run, the main trial looping and plotting function
 
 robyn_run <- function(listInput
-                       ,plot_folder = getwd() 
-                       ,fixed.out = FALSE
-                       ,dt_hyppar_fixed_inner = NULL # dt_hyppar_fixed_inner = dt_hyppar_fixed[solID == modID]
-                       ,pareto_fronts = 3
+                      ,plot_folder = getwd() 
+                      ,fixed.out = FALSE
+                      ,dt_hyppar_fixed_inner = NULL # dt_hyppar_fixed_inner = dt_hyppar_fixed[solID == modID]
+                      ,pareto_fronts = 3
                       ,plot_pareto = TRUE
-                       ,refresh = FALSE) {
+                      ,refresh = FALSE) {
   
   #####################################
   #### Set local environment
@@ -1786,8 +1787,6 @@ robyn_run <- function(listInput
   
   
   cat("\nPlotting summary charts in to folder",paste0(plot_folder, "/", plot_folder_sub,"/"),"...\n")
-
-  ## plot overview plots
   
   if (!hyperparameter_fixed & fixed.out ==F) {
     
@@ -2159,7 +2158,8 @@ robyn_run <- function(listInput
       xDecompVec <- data.table(mapply(function(scurved,coefs) { scurved * coefs}, 
                                       scurved=dt_transformDecomp[, !c("ds", "depVar"), with=F] , 
                                       coefs = xDecompVec[, !c("solID", "(Intercept)")]))
-      xDecompVec[, ':='(depVarHat=rowSums(xDecompVec) + intercept, solID = uniqueSol[j])]
+      xDecompVec[, intercept:= intercept]
+      xDecompVec[, ':='(depVarHat=rowSums(xDecompVec), solID = uniqueSol[j])]
       xDecompVec <- cbind(dt_transformDecomp[, .(ds, depVar)], xDecompVec)
       
       xDecompVecPlot <- xDecompVec[, .(ds, depVar, depVarHat)]
@@ -2443,8 +2443,6 @@ robyn_save <- function(robyn_object
 
 
 robyn_refresh <- function(robyn_object
-                          # ,data_csv_name
-                          # ,holiday_csv_name
                           ,dt_input = dt_input
                           ,dt_holidays= dt_holidays
                           ,stepForward = 4
@@ -2606,7 +2604,7 @@ robyn_refresh <- function(robyn_object
       xDecompVecReport <- rbind(listReportPrev$xDecompVecReport
                                 ,listOutputRefresh$xDecompVecCollect[bestModRF==T & ds>=listInputRefresh$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
     }
-    
+
     fwrite(resultHypParamReport, paste0(listOutputRefresh$plot_folder, "report_hyperparameters.csv"))
     fwrite(xDecompAggReport, paste0(listOutputRefresh$plot_folder, "report_aggregated.csv"))
     fwrite(mediaVecReport, paste0(listOutputRefresh$plot_folder, "report_media_transform_matrix.csv"))
