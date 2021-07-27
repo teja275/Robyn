@@ -84,7 +84,7 @@ registerDoSEQ(); detectCores()
 
 ## 3. set each hyperparameter bounds. They either contains two values e.g. c(0, 0.5), or only one value (in which case you've "fixed" that hyperparameter)
 set_adstock <- "geometric"
-set_mediaVarName <- c("tv_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P") 
+set_mediaVarName <- c("tv_S","ooh_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P") 
 hyper_names(adstock = set_adstock, set_mediaVarName = set_mediaVarName)
 
 set_hyperBoundLocal <- list(
@@ -134,11 +134,11 @@ listInput <- robyn_inputs(dt_input = dt_input
                          ,set_baseVarSign = c("default", "default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
                          
                          ,set_mediaVarName = set_mediaVarName # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
-                         ,set_mediaVarSign = c("positive", "positive", "positive", "positive") # c("default", "positive", and "negative"), control the signs of coefficients for media variables
-                         ,set_mediaSpendName = c("tv_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as set_mediaVarName
+                         ,set_mediaVarSign = c("positive", "positive","positive", "positive", "positive") # c("default", "positive", and "negative"), control the signs of coefficients for media variables
+                         ,set_mediaSpendName = c("tv_S","ooh_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as set_mediaVarName
                          
-                         ,set_organicMedia = c("ooh_S")
-                         ,set_organicSign = c("positive")
+                         #,set_organicMedia = c()
+                         #,set_organicSign = c()
                          
                          ,set_factorVarName = c("events", "launches") # please specify which variable above should be factor
                          
@@ -183,7 +183,7 @@ listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, paret
 ######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
 ## save selected model
 listOutput$allSolutions
-select_model <- "1_15_6"
+select_model <- "1_22_1"
 robyn_save(robyn_object = robyn_object, initModID = select_model, listInput = listInput, listOutput = listOutput)
 # load(robyn_object)
 
@@ -206,8 +206,8 @@ listAllocator <- robyn_allocator(listInput
                                  ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                                  #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
                                  #,expected_spend_days = 90 # specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
-                                 ,channel_constr_low = c(0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as set_mediaVarName
-                                 ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
+                                 ,channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as set_mediaVarName
+                                 ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
 )
 
 ## QA optimal response

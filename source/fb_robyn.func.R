@@ -138,7 +138,7 @@ robyn_inputs <- function(dt_input
   ## check organic media variables
   if (!all(set_organicMedia %in% names(dt_input)) ) {
     stop("Provided set_organicMedia is not included in input data")
-  } else if (is.null(set_organicSign)) {
+  } else if (!is.null(set_organicMedia) & is.null(set_organicSign)) {
     set_organicSign <- rep("positive", length(set_organicMedia))
     message("set_organicSign is not provided. 'positive' is used")
   } else if (length(set_organicSign) != length(set_organicMedia) | !all(set_organicSign %in% c("positive", "negative", "default"))) {
@@ -2098,7 +2098,7 @@ robyn_run <- function(listInput
       
       #mediaAdstockFactorPlot <- dt_transformPlot[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName]  / dt_transformAdstock[, lapply(.SD, sum), .SDcols = listInput$set_mediaVarName]
       #dt_transformSaturationAdstockReverse <- data.table(mapply(function(x, y) {x*y},x= dt_transformAdstock[, listInput$set_mediaVarName, with=F], y= mediaAdstockFactorPlot))
-      dt_transformSaturationSpendReverse <- copy(dt_transformAdstock[, !listInput$set_organicMedia, with=F])
+      dt_transformSaturationSpendReverse <- copy(dt_transformAdstock[, c("ds", listInput$all_media), with=F])
       
       for (i in 1:listInput$mediaVarCount) {
         chn <- listInput$set_mediaVarName[i]
@@ -2122,7 +2122,7 @@ robyn_run <- function(listInput
       
       dt_transformSaturationSpendReverse <- dt_transformSaturationSpendReverse[listInput$rollingWindowStartWhich:listInput$rollingWindowEndWhich]
       
-      dt_scurvePlot <- cbind(melt.data.table(dt_transformSaturationDecomp[, !listInput$set_organicMedia, with=F], id.vars = "ds", variable.name = "channel",value.name = "response"),
+      dt_scurvePlot <- cbind(melt.data.table(dt_transformSaturationDecomp[, c("ds", listInput$all_media), with=F], id.vars = "ds", variable.name = "channel",value.name = "response"),
                              melt.data.table(dt_transformSaturationSpendReverse, id.vars = "ds", value.name = "spend")[, .(spend)])
       dt_scurvePlot <- dt_scurvePlot[spend>=0] # remove outlier introduced by MM nls fitting
       
@@ -2236,9 +2236,11 @@ robyn_run <- function(listInput
       }
       
       ## prepare output
-      dt_transformSpend[, (listInput$set_organicMedia):= NA]
-      dt_transformSpendMod[, (listInput$set_organicMedia):= NA]
-      dt_transformSaturationSpendReverse[, (listInput$set_organicMedia):= NA]
+      if (!is.null(listInput$set_organicMedia)) {
+        dt_transformSpend[, (listInput$set_organicMedia):= NA]
+        dt_transformSpendMod[, (listInput$set_organicMedia):= NA]
+        dt_transformSaturationSpendReverse[, (listInput$set_organicMedia):= NA]
+      }
       
       mediaVecCollect[[cnt]] <- rbind(dt_transformPlot[, ':='(type="rawMedia", solID=uniqueSol[j])]
                                       ,dt_transformSpend[, ':='(type="rawSpend", solID=uniqueSol[j])]
