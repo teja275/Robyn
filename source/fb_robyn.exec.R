@@ -1,13 +1,19 @@
-# DONE: 1.functionalise input/ remove global param to enable packaging: f.inputDT, f.inputParam, f.featureEngineering 
-# DONE: 2.rolling window : # a. replace window , b. replace hyppar bounces, c. replace decomp.rssd
-# 3.plot enhancement: prophet plot to be replaced, channel detail plot for selecte model f.plotModel (saturation + mROI), correlation matrix for f.inputDT, "reporting" of rolling results
-# 4.add pareto clustering
-# DONE: 5.get mROI function?
-# 6.organic channels
-# 7.decomp fix for categorical vars? FIX THE BUG in line  xDecompOutAgg <- sapply(xDecompOut[, c("intercept", indepVarName), with =F], function(x) sum(x))
-# DONE: 8.nls fit: try Hill? rewrite trycatch? 
-# close all connection bug=? https://github.com/facebookexperimental/Robyn/issues/108; https://github.com/facebookexperimental/Robyn/pull/106 
+# DONE: functionalise input/ remove global param to enable packaging: f.inputDT, f.inputParam, f.featureEngineering 
+# DONE: rolling window : # a. replace window , b. replace hyppar bounces, c. replace decomp.rssd
+# DONE: get mROI function?
+# DONE: decomp fix for categorical vars?
+# DONE: nls fit: try Hill? rewrite trycatch? 
+# DONE: close all connection bug=? https://github.com/facebookexperimental/Robyn/issues/108; https://github.com/facebookexperimental/Robyn/pull/106 
+# DONE: adapt allocator and fix plot
+# DONE: fixed week count wday
+# DONE: adapt all paths
+# DONE: adapt robyn_response
 # returning pParFront, change cat() to message() for shiny
+# adapt prophet plot to be replaced & f.plotModel (saturation + mROI), 
+# correlation matrix for f.inputDT, "reporting" of rolling results, channel detail plot for selecte model 
+# add pareto clustering
+# organic channels
+# adapt robyn_fixed
 
 # Copyright (c) Facebook, Inc. and its affiliates.
 
@@ -36,7 +42,7 @@ source(paste(script_path, "fb_robyn.func.R", sep=""))
 source(paste(script_path, "fb_robyn.optm.R", sep=""))
 
 ## Please make sure to install all libraries before rurnning the scripts
-f.loadLibrary()
+load_libs()
 # virtualenv_create("r-reticulate")
 # use_virtualenv("r-reticulate", required = TRUE)
 # py_install("nevergrad", pip = TRUE)
@@ -138,13 +144,12 @@ listInput <- robyn_inputs(dt_input = dt_input
                          ,set_cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
                          
                          ## set rolling window start (only works for whole dataset for now)
-                         #,set_rollingWindowStartDate = "2019-04-29"
                          ,set_rollingWindowStartDate = "2016-11-23"
                          ,set_rollingWindowEndDate = "2018-08-22"
                          
                          ## set model core features
                          ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
-                         ,set_iter = 100  # number of allowed iterations per trial. 500 is recommended
+                         ,set_iter = 150  # number of allowed iterations per trial. 500 is recommended
                          
                          ,set_hyperOptimAlgo = "DiscreteOnePlusOne" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
                          ,set_trial = 1 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
@@ -152,10 +157,10 @@ listInput <- robyn_inputs(dt_input = dt_input
                          
                          ,set_hyperBoundLocal = set_hyperBoundLocal
                          
-                         # ,set_lift = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
-                         #                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
-                         #                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
-                         #                        liftAbs = c(400000, 300000, 200000))
+                         ,set_lift = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
+                                                liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
+                                                liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
+                                                liftAbs = c(400000, 300000, 200000))
                          
 )
 
@@ -167,7 +172,7 @@ plot_saturation(F) # s-curve transformation example plot, helping you understand
 ################################################################
 #### Run models
 
-listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, pareto_fronts =3)
+listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, pareto_fronts =3, plot_pareto = FALSE)
 
 ######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
 ## save selected model

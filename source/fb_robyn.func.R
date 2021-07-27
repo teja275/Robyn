@@ -174,7 +174,7 @@ robyn_inputs <- function(dt_input
   init_all0 <- colSums(dt_init)==0
   if(any(init_all0)) {
     stop("These media channels contains only 0 within training period ",dt_input[rollingWindowStartWhich, get(set_dateVarName)], " to ", dt_input[rollingWindowEndWhich, get(set_dateVarName)], ": ", paste(names(dt_init)[init_all0], collapse = ", ")
-         , " \nRecommendation: adapt listParam$set_rollingWindowStartDate, remove or combine these channels")
+         , " \nRecommendation: adapt listInput$set_rollingWindowStartDate, remove or combine these channels")
   }
   
   ## check adstock
@@ -620,7 +620,7 @@ robyn_engineering <- function(listInput = listInput
       mod_ohe <- fit.prophet(modelRecurrance, dt_ohe)
       # prophet::regressor_coefficients(mxxx)
       dt_forecastRegressor <- predict(mod_ohe, dt_ohe)
-      prophet_plot_components(mod_ohe, dt_forecastRegressor)
+      # prophet::prophet_plot_components(mod_ohe, dt_forecastRegressor)
       
       forecastRecurrance <- dt_forecastRegressor[, str_detect(names(dt_forecastRegressor), "_lower$|_upper$", negate = T), with =F]
       for (aggreg in  set_factorVarName) {
@@ -784,57 +784,6 @@ f.hill <- function(x, alpha, gamma, x_marginal = NULL) {
   return(x_scurve)
 }
 
-################################################
-#### Define transformation function
-
-f.transformation <- function (x, theta= NULL, shape= NULL, scale= NULL, alpha=NULL, gamma=NULL, alternative = listParam$adstock, stage = 3) {
-  
-  ## step 1: add decay rate
-  
-  if (alternative == "geometric") {
-    x_list <- f.adstockGeometric(x, theta)
-    x_decayed <- x_list$x_decayed
-    
-    if (stage == "thetaVecCum") {
-      #thetaVecCum <- theta
-      #for (t in 2:length(x)) {thetaVecCum[t] <- thetaVecCum[t-1]*theta} # plot(thetaVecCum)
-      thetaVecCum <- x_list$thetaVecCum
-    }
-    
-  } else if (alternative == "weibull") {
-    x_list <- f.adstockWeibull(x, shape, scale)
-    x_decayed <- x_list$x_decayed # plot(x_decayed)
-    
-    if (stage == "thetaVecCum") {
-      thetaVecCum <- x_list$thetaVecCum # plot(thetaVecCum)
-    }
-    
-  } else {
-    print("alternative must be geometric or weibull")
-  }
-  
-  ## step 2: normalize decayed independent variable ############ deprecated
-  #x_normalized <- scale(x_decayed, center =F) # plot(x_normalized) summary(x_normalized)
-  x_normalized <- x_decayed
-  
-  ## step 3: s-curve transformation
-  gammaTrans <- round(quantile(seq(range(x_normalized)[1], range(x_normalized)[2], length.out = 100), gamma),4)
-  x_scurve <-  x_normalized**alpha / (x_normalized**alpha + gammaTrans**alpha) # plot(x_scurve) summary(x_scurve)
-  
-  if (stage == 1) {
-    x_out <- x_decayed
-  } else if (stage == 2) {
-    x_out <- x_normalized
-  } else if (stage ==3) {
-    x_out <- x_scurve
-  } else if (stage == "thetaVecCum") {
-    x_out <- thetaVecCum
-  } else {stop("stage must be 1, 2 or 3, indicating adstock, normalization & scurve stages of transformation") }
-  
-  if (sum(is.nan(x_out))>0) {stop("hyperparameters out of range. theta range: 0-1 (excl.1), shape range: 0-5 (excl.0), alpha range: 0-5 (excl.0),  gamma range: 0-1 (excl.0)")}
-  return(x_out)
-}
-
 
 ################################################
 #### Define r-squared function
@@ -937,9 +886,9 @@ f.decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, refre
 ################################################
 #### Define lift calibration function
 
-f.calibrateLift <- function(decompCollect, set_lift=listParam$set_lift) {
+f.calibrateLift <- function(decompCollect, set_lift=listInput$set_lift, set_mediaVarName=listInput$set_mediaVarName) {
   
-  check_set_lift <- any(sapply(set_lift$channel, function(x) any(str_detect(x, listParam$set_mediaVarName)))==F) #check if any lift channel doesnt have media var
+  check_set_lift <- any(sapply(set_lift$channel, function(x) any(str_detect(x, set_mediaVarName)))==F) #check if any lift channel doesnt have media var
   if (check_set_lift) {stop("set_lift channels must have media variable")}
   ## prep lift input
   getLiftMedia <- unique(set_lift$channel)
@@ -1046,8 +995,6 @@ f.refit <- function(x_train, y_train, lambda, lower.limits, upper.limits) {
 #### Define major mmm function
 
 f.mmm <- function(...
-                  # , listParam = parent.frame()$listParam
-                  # , listDT = parent.frame()$listDT
                   , listInput
                   , set_iter = listInput$set_iter
                   , lambda.n = 100
@@ -1286,10 +1233,6 @@ f.mmm <- function(...
         
         #####################################
         #### Get hyperparameter sample
-        
-        # f.transformation <- function(hypParamSam, dt_mod, set_mediaVarName, rollingWindowStartWhich, rollingWindowEndWhich) {
-        #   
-        # }
         
         hypParamSam <- unlist(hypParamSamNG[i])
         
@@ -1534,6 +1477,7 @@ f.mmm <- function(...
       ## end parallel
       
       #stopCluster(al)
+      stopImplicitCluster()
       
       nrmse.collect <- sapply(doparCollect, function(x) x$nrmse)
       decomp.rssd.collect <- sapply(doparCollect, function(x) x$decomp.rssd)
@@ -1620,10 +1564,11 @@ f.mmm <- function(...
 
 robyn_run <- function(listInput
                        ,plot_folder = getwd() 
-                       ,fixed.out = F
+                       ,fixed.out = FALSE
                        ,dt_hyppar_fixed_inner = NULL # dt_hyppar_fixed_inner = dt_hyppar_fixed[solID == modID]
                        ,pareto_fronts = 3
-                       ,refresh = F) {
+                      ,plot_pareto = TRUE
+                       ,refresh = FALSE) {
   
   #####################################
   #### Set local environment
@@ -1820,7 +1765,7 @@ robyn_run <- function(listInput
   
   
   #####################################
-  #### Plot results
+  #### Plot overview
   
   ## set folder to save plat
   if (!exists("plot_folder_sub")) {
@@ -1839,9 +1784,8 @@ robyn_run <- function(listInput
   }
   
   
-  cat("\nPlotting", num_pareto123,"pareto optimum models in to folder",paste0(plot_folder, "/", plot_folder_sub,"/"),"...\n")
-  pbplot <- txtProgressBar(max = num_pareto123, style = 3)
-  
+  cat("\nPlotting summary charts in to folder",paste0(plot_folder, "/", plot_folder_sub,"/"),"...\n")
+
   ## plot overview plots
   
   if (!hyperparameter_fixed & fixed.out ==F) {
@@ -1900,7 +1844,7 @@ robyn_run <- function(listInput
     
     
     ## plot Pareto front
-    
+    if (length(listInput$set_lift)>0) {resultHypParam[, iterations:= ifelse(is.na(robynPareto), NA, iterations)]}
     pParFront <- ggplot(data = resultHypParam, aes(x=nrmse, y=decomp.rssd, color = iterations)) +
       geom_point(size = 0.5) +
       #stat_smooth(data = resultHypParam, method = 'gam', formula = y ~ s(x, bs = "cs"), size = 0.2, fill = "grey100", linetype="dashed")+
@@ -1908,7 +1852,7 @@ robyn_run <- function(listInput
       #geom_line(data = resultHypParam[robynPareto ==2], aes(x=nrmse, y=decomp.rssd), colour = "coral3")+
       #geom_line(data = resultHypParam[robynPareto ==3], aes(x=nrmse, y=decomp.rssd), colour = "coral")+
       scale_colour_gradient(low = "navyblue", high = "skyblue") +
-      labs(title="Model selection",
+      labs(title=ifelse(length(listInput$set_lift)==0, "Model selection", "Model selection with top 10% calibration"),
            subtitle=paste0("2D Pareto front 1-3 with ",listInput$set_hyperOptimAlgo,", iterations = ", listInput$set_iter , " * ", listInput$set_trial, " trials"),
            x="NRMSE",
            y="DECOMP.RSSD")
@@ -1928,8 +1872,14 @@ robyn_run <- function(listInput
   }
   
   
-  ## plot each Pareto solution
+  #####################################
+  #### Plot each pareto solution
   
+  if (plot_pareto) {
+    cat("\nPlotting", num_pareto123,"pareto optimum models in to folder",paste0(plot_folder, "/", plot_folder_sub,"/"),"...\n")
+    pbplot <- txtProgressBar(max = num_pareto123, style = 3)
+  }
+    
   cnt <- 0
   mediaVecCollect <- list()
   xDecompVecCollect <- list()
@@ -2239,11 +2189,13 @@ robyn_run <- function(listInput
       
       pg <- arrangeGrob(p2,p5,p1, p4, p3, p6, ncol=2, top = text_grob(modID, size = 15, face = "bold"))
       # grid.draw(pg)
-      ggsave(filename=paste0(plot_folder, "/", plot_folder_sub,"/", uniqueSol[j],".png")
-             , plot = pg
-             , dpi = 600, width = 18, height = 18)
+      if (plot_pareto) {
+        ggsave(filename=paste0(plot_folder, "/", plot_folder_sub,"/", uniqueSol[j],".png")
+               , plot = pg
+               , dpi = 600, width = 18, height = 18)
       
-      setTxtProgressBar(pbplot, cnt)
+        setTxtProgressBar(pbplot, cnt)
+      }
       
       ## prepare output
       
@@ -2726,7 +2678,7 @@ robyn_refresh <- function(robyn_object
   invisible(Robyn)
 }
 
-f.loadLibrary <- function() {
+load_libs <- function() {
   
   libsNeeded <- c("data.table","stringr","lubridate","doParallel","foreach","glmnet","car","StanHeaders","prophet","rstan","ggplot2","gridExtra","grid","ggpubr","see","PerformanceAnalytics","nloptr","minpack.lm","rPref","reticulate","rstudioapi","corrplot")
   cat(paste0("Loading required libraries: ", paste(libsNeeded, collapse = ", "), "\n"))
