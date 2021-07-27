@@ -1075,6 +1075,7 @@ f.mmm <- function(...
   #set_factorVarName <- listInput$set_factorVarName
   set_lift <- listInput$set_lift
   optimizer_name <- listInput$set_hyperOptimAlgo
+  set_cores <- listInput$set_cores
   
   ng <- import("nevergrad")
   
@@ -1107,7 +1108,7 @@ f.mmm <- function(...
   dt_spendShare[, ':='(spend_share = mean_spend / sum(mean_spend))]
   
   refreshAddedStartWhich <- which(dt_modRollWind$ds==refreshAddedStart)
-  dt_spendShareRF <- dt_inputTrain[refreshAddedStartWhich:listInput$rollingWindowLength, 
+  dt_spendShareRF <- dt_inputTrain[refreshAddedStartWhich:rollingWindowLength, 
                                    .(rn = set_mediaVarName,
                                      total_spend = sapply(.SD, sum),
                                      mean_spend = sapply(.SD, function(x) ifelse(is.na(mean(x[x>0])),0, mean(x[x>0])))) 
@@ -1126,7 +1127,7 @@ f.mmm <- function(...
   ## set iterations
   if (fixed.out == F) {
     iterTotal <- set_iter
-    iterPar <- listInput$set_cores
+    iterPar <- set_cores
   } else if (num_hyppar_ng==0 & fixed.out == T) {
     iterTotal <- 1
     iterPar <- 1
@@ -1134,9 +1135,9 @@ f.mmm <- function(...
     iterTotal <- nrow(input.fixed)
     iterPar <- nrow(input.fixed)
   }
-  iterNG <-  ifelse(fixed.out == F, ceiling(set_iter/listInput$set_cores), 1)
+  iterNG <-  ifelse(fixed.out == F, ceiling(set_iter/set_cores), 1)
   
-  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_local_ng),"hyperparameters,",lambda.n,"-fold ridge x-validation using",listInput$set_cores,"cores...\n")
+  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_local_ng),"hyperparameters,",lambda.n,"-fold ridge x-validation using",set_cores,"cores...\n")
   
   ## start Nevergrad optimiser
   
@@ -1144,7 +1145,7 @@ f.mmm <- function(...
     my_tuple <- tuple(num_hyppar_ng)
     instrumentation <- ng$p$Array(shape=my_tuple, lower=0., upper=1.)
     #instrumentation$set_bounds(0., 1.)
-    optimizer <-  ng$optimizers$registry[optimizer_name](instrumentation, budget=iterTotal, num_workers=listInput$set_cores)
+    optimizer <-  ng$optimizers$registry[optimizer_name](instrumentation, budget=iterTotal, num_workers=set_cores)
     if (nrow(set_lift)==0) {
       optimizer$tell(ng$p$MultiobjectiveReference(), tuple(1.0, 1.0))
     } else {
@@ -1159,6 +1160,7 @@ f.mmm <- function(...
   cnt <- 0
   cat('\n',"Working with: ", optimizer_name,'\n')
   if(fixed.out==F) {pb <- txtProgressBar(max = iterTotal, style = 3)}
+  assign("listInput", listInput, envir = .GlobalEnv) # adding this to enable listInput reading during parallel
   #opts <- list(progress = function(n) setTxtProgressBar(pb, n))
   sysTimeDopar <- system.time({
     for (lng in 1:iterNG) {
@@ -1207,8 +1209,8 @@ f.mmm <- function(...
       nrmse.collect <- c()
       decomp.rssd.collect <- c()
       best_mape <- Inf
-      closeAllConnections()
-      registerDoParallel(listInput$set_cores)  #registerDoParallel(cores=listInput$set_cores)
+      # closeAllConnections()
+      registerDoParallel(set_cores)  #registerDoParallel(cores=listInput$set_cores)
       #al <- makeCluster(listInput$set_cores)
       #registerDoParallel(al)
       getDoParWorkers()
@@ -2447,8 +2449,8 @@ robyn_refresh <- function(robyn_object
                           ,dt_holidays= dt_holidays
                           ,stepForward = 4
                           ,refreshMode = "manual" # "auto", "manual"
-                          ,refreshIter = 50
-                          ,refreshTrial = 2
+                          ,refreshIter = 100
+                          ,refreshTrial = 1
 
 ) {
   
@@ -2559,7 +2561,6 @@ robyn_refresh <- function(robyn_object
     ## feature engineering for refreshed data
     listInputRefresh <- robyn_engineering(listInput = listInputRefresh)
     
-    
     ## refresh model with adjusted decomp.rssd
     
     listOutputRefresh <- robyn_run(listInput = listInputRefresh, plot_folder = objectPath, pareto_fronts =1, refresh = T)
@@ -2611,7 +2612,9 @@ robyn_refresh <- function(robyn_object
     fwrite(xDecompVecReport, paste0(listOutputRefresh$plot_folder, "report_alldecomp_matrix.csv"))
     
     
-    #### reporting plots
+    #### reporting plots 
+    ## actual vs fitted
+    
     xDecompVecReportPlot <- copy(xDecompVecReport)
     xDecompVecReportPlot[, ':='(refreshStart = min(ds)
                                 ,refreshEnd = max(ds)), by = "refreshStatus"]
@@ -2646,6 +2649,28 @@ robyn_refresh <- function(robyn_object
     
     ggsave(filename=paste0(listOutputRefresh$plot_folder,"report_actual_fitted.png")
            , plot = pFitRF
+           , dpi = 600, width = 9, height = 6)
+    
+    ## stacked bar plot
+    
+    xDecompAggReportPlotBase <- xDecompAggReport[rn %in% c(listInputRefresh$set_prophet,"(Intercept)"), .(rn, xDecompMeanNon0PercRF, refreshStatus)]
+    xDecompAggReportPlotBase <- xDecompAggReportPlotBase[, .(variable = "baseline", percentage = sum(xDecompMeanNon0PercRF)), by = refreshStatus]
+    xDecompAggReportPlot <- xDecompAggReport[!(rn %in% c(listInputRefresh$set_prophet,"(Intercept)")), .(refreshStatus, variable=rn, percentage=xDecompMeanNon0PercRF )]
+    xDecompAggReportPlot <- rbind(xDecompAggReportPlot, xDecompAggReportPlotBase)[order(refreshStatus, -variable)]
+
+    pBarRF <- ggplot(data=xDecompAggReportPlot, mapping=aes(y= percentage,x=refreshStatus, fill=variable)) +
+      geom_bar(alpha=0.8, position="dodge", stat="identity") +
+      scale_fill_brewer(palette = 'BrBG') +
+      geom_text(aes(label = paste0(round(percentage*100,1),"%")) 
+                ,position=position_dodge(width=0.9), vjust=-0.25) +
+      labs(title="Model refresh decomposition"
+           ,subtitle = "baseline includes intercept and all prophet variables")
+    
+    print(pBarRF)
+    
+   # pReport <- arrangeGrob(pFitRF,pBarRF, ncol=1, top = text_grob("Robyn report onepaper", size = 15, face = "bold"))
+    ggsave(filename=paste0(listOutputRefresh$plot_folder,"report_decomposition.png")
+           , plot = pBarRF
            , dpi = 600, width = 9, height = 6)
     
     

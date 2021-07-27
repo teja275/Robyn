@@ -8,8 +8,9 @@
 # DONE: fixed week count wday
 # DONE: adapt all paths
 # DONE: adapt robyn_response
-# returning pParFront, change cat() to message() for shiny
 # DONE: adapt prophet plot to be replaced & combine adstock plots
+# DONE: add bar plot for reporting
+# returning pParFront, change cat() to message() for shiny
 # correlation matrix for f.inputDT, "reporting" of rolling results, channel detail plot for selecte model (mROI)
 # add pareto clustering
 # organic channels
@@ -157,10 +158,10 @@ listInput <- robyn_inputs(dt_input = dt_input
                          
                          ,set_hyperBoundLocal = set_hyperBoundLocal
                          
-                         ,set_lift = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
-                                                liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
-                                                liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
-                                                liftAbs = c(400000, 300000, 200000))
+                         # ,set_lift = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
+                         #                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
+                         #                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
+                         #                        liftAbs = c(400000, 300000, 200000))
                          
 )
 
@@ -177,7 +178,7 @@ listOutput <- robyn_run(listInput = listInput, plot_folder = robyn_object, paret
 ######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
 ## save selected model
 listOutput$allSolutions
-select_model <- "1_21_5"
+select_model <- "1_22_2"
 robyn_save(robyn_object = robyn_object, initModID = select_model, listInput = listInput, listOutput = listOutput)
 # load(robyn_object)
 
@@ -205,14 +206,14 @@ listAllocator <- robyn_allocator(listInput
 )
 
 ## QA optimal response
-select_media <- "facebook_I"
+select_media <- "tv_S"
 optimal_spend <- listAllocator$dt_optimOut[channels== select_media, optmSpendUnit]
 optimal_response_allocator <- listAllocator$dt_optimOut[channels== select_media, optmResponseUnit]
 optimal_response <- robyn_response(robyn_object = robyn_object
                                    , select_run = 0
                                    , mediaVarName = select_media
                                    , Spend = optimal_spend)
-round(optimal_response_allocator) == round(optimal_response)
+round(optimal_response_allocator) == round(optimal_response); optimal_response_allocator; optimal_response
 
 ################################################################
 #### Model refresh - Alpha
@@ -223,8 +224,8 @@ round(optimal_response_allocator) == round(optimal_response)
 Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
                        , dt_input = dt_input
                        , dt_holidays = dt_holidays
-                       , stepForward = 26 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
-                       , refreshMode = "auto" # "auto" means the refresh function will move forward until no more data available
+                       , stepForward = 4 # stepForward = 4 means refresh model's rolling window will move forward 4 weeks 
+                       , refreshMode = "manual" # "auto" means the refresh function will move forward until no more data available
                        , refreshIter = 200 # iteration for refresh
                        , refreshTrial = 1 # trial for refresh
 )
