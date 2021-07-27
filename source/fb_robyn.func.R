@@ -274,9 +274,9 @@ robyn_inputs <- function(dt_input
 ########################################################################
 
 
-plot_adstock <- function(plotAdstockCurves, adstock=listInput$adstock) {
+plot_adstock <- function(plotAdstockCurves) {
   if (plotAdstockCurves) {
-    if (adstock == "weibull") {
+    # plot weibull
       weibullCollect <- list()
       shapeVec <- c(2, 2, 2, 2, 2, 2, 0.01, 0.1, 0.5, 1, 1.5, 2)
       scaleVec <- c(0.01, 0.05, 0.1, 0.15, 0.2, 0.5, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05)
@@ -313,9 +313,7 @@ plot_adstock <- function(plotAdstockCurves, adstock=listInput$adstock) {
              x="time unit",
              y="Media decay accumulated") 
       
-      grid.arrange(p1,p2)
-      
-    } else if (adstock == "geometric") {
+    ## plot geometric
       
       geomCollect <- list()
       thetaVec <- c(0.01, 0.05, 0.1, 0.2, 0.5, 0.6, 0.7, 0.8, 0.9)
@@ -340,8 +338,11 @@ plot_adstock <- function(plotAdstockCurves, adstock=listInput$adstock) {
              subtitle="Halflife = time until effect reduces to 50%",
              x="time unit",
              y="Media decay accumulated") 
-      print(p3)
-    }
+      #print(p3)
+      
+      grid.arrange(p1,p2, p3, layout_matrix = rbind(c(3,1),
+                                                    c(3,2)))
+    
   }
 }
 

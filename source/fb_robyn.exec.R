@@ -9,8 +9,8 @@
 # DONE: adapt all paths
 # DONE: adapt robyn_response
 # returning pParFront, change cat() to message() for shiny
-# adapt prophet plot to be replaced & f.plotModel (saturation + mROI), 
-# correlation matrix for f.inputDT, "reporting" of rolling results, channel detail plot for selecte model 
+# DONE: adapt prophet plot to be replaced & combine adstock plots
+# correlation matrix for f.inputDT, "reporting" of rolling results, channel detail plot for selecte model (mROI)
 # add pareto clustering
 # organic channels
 # adapt robyn_fixed
