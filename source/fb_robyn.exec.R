@@ -17,9 +17,9 @@
 # DONE: put max run as default for response function
 # DONE: adapt dep type, CPA or add avg conv value for ROI
 # DONE: add observation warning
+# DONE: adjusted rsq
 # add ROI report plot
 # adapt allocator for robyn_object
-
 # add survey
 # clean up comments & prints
 
@@ -27,11 +27,6 @@
 # add pareto clustering
 # returning pParFront, change cat() to message() for shiny
 
-
-
-
-# adapt robyn_fixed
-# fix dep_var_type
 
 # Copyright (c) Facebook, Inc. and its affiliates.
 
@@ -76,6 +71,7 @@ dt_input <- fread(paste0(script_path, "de_simulated_data.csv"))
 dt_holidays <- fread(paste0(script_path, "holidays.csv"))
 robyn_object <- "/Users/gufengzhou/Documents/robyn_dev_output/Robyn.RData"
 registerDoSEQ(); detectCores()
+
 
 ################################################################
 #### set model input & feature engineering
@@ -203,15 +199,12 @@ OutputCollect <- robyn_run(InputCollect = InputCollect
 
 
 ######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
-## save selected model
-OutputCollect$allSolutions
-select_model <- "1_25_3"
-robyn_save(robyn_object = robyn_object, select_model = select_model, InputCollect = InputCollect, OutputCollect = OutputCollect)
-# load(robyn_object)
+#### save selected model
 
-## THIS PART IS NOT YET ADAPTED!! reload old models from csv
-# dt_oldModels <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-09 12.54/pareto_hyperparameters.csv") # load hyperparameter csv. Provide your own path.
-# robyn_run_fixed(plot_folder = "~/Documents/GitHub/plots", dt_hyppar_fixed = dt_oldModels, modID = "3_4_6") # solID must be included in the csv
+OutputCollect$allSolutions
+select_model <- "1_25_5"
+robyn_save(robyn_object = robyn_object, select_model = select_model, InputCollect = InputCollect, OutputCollect = OutputCollect)
+
 
 ################################################################
 #### Budget Allocator - Beta
@@ -240,6 +233,7 @@ optimal_response <- robyn_response(robyn_object = robyn_object
                                    , paid_media_var = select_media
                                    , Spend = optimal_spend)
 round(optimal_response_allocator) == round(optimal_response); optimal_response_allocator; optimal_response
+
 
 ################################################################
 #### Model refresh - Alpha
@@ -270,7 +264,7 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
 #### get marginal returns
 
 ## example of how to get marginal ROI for 80k spend for search channel from the second refresh model
-Robyn$listRefresh1$ReportCollect$xDecompAggReport[, .(refreshStatus, rn, mean_spend, mean_response, roi)]
+Robyn$listRefresh1$ReportCollect$xDecompAggReport[, .(refreshStatus, rn, mean_spend, mean_response, roi_mean, roi_total)]
 
 # get response for 80k
 Spend <- 50000
@@ -291,12 +285,21 @@ Response1/Spend1 # ROI for search 80k+1
 # marginal ROI of 80k search
 (Response1-Response)/(Spend1-Spend)
 
+
+################################################################
+#### get old model results
+
+# get old hyperparameters and select model
+dt_hyper_fixed <- fread("/Users/gufengzhou/Documents/robyn_dev_output/2021-07-29 00.56 init/pareto_hyperparameters.csv")
+select_model <- "1_24_5" 
+dt_hyper_fixed <- dt_hyper_fixed[solID == select_model]
+
+OutputCollectFixed <- robyn_run(InputCollect = InputCollect # InputCollect must be provided by robyn_inputs with same dataset and parameters as before
+                                , plot_folder = robyn_object 
+                                , dt_hyper_fixed = dt_hyper_fixed) 
+
+# save Robyn object for further refresh
+robyn_save(robyn_object = robyn_object, select_model = select_model, InputCollect = InputCollect, OutputCollect = OutputCollectFixed)
+
+
 # remotes::install_github("laresbernardo/Robyn")
-
-
-dt_hyper_fixed <- fread("/Users/gufengzhou/Documents/robyn_dev_output/2021-07-28 14.27 init/pareto_hyperparameters.csv")
-
-OutputCollectFixed <- robyn_run(InputCollect = InputCollect
-                                , plot_folder = robyn_object
-                                , dt_hyper_fixed = dt_hyper_fixed[solID == "1_20_3"])
-

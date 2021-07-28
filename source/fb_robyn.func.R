@@ -8,6 +8,16 @@
 ###### Input and setup functions
 ########################################################################
 
+load_libs <- function() {
+  
+  libsNeeded <- c("data.table","stringr","lubridate","doParallel","foreach","glmnet","car","StanHeaders","prophet","rstan","ggplot2","gridExtra","grid","ggpubr","see","PerformanceAnalytics","nloptr","minpack.lm","rPref","reticulate","rstudioapi","corrplot")
+  cat(paste0("Loading required libraries: ", paste(libsNeeded, collapse = ", "), "\n"))
+  libsInstalled <- rownames(installed.packages())
+  for (l in libsNeeded) {
+    if (require(l, character.only = T)) {} else {install.packages(l)}
+  }
+}
+
 robyn_inputs <- function(dt_input
                          ,dt_holidays
                          
@@ -521,7 +531,7 @@ robyn_engineering <- function(InputCollect = InputCollect
             yhatNLSQA <- modNLSSum$coefficients[1,1] * dt_spendModInput$spend / (modNLSSum$coefficients[2,1] + dt_spendModInput$spend) #exposure = v  * spend / (k + spend)
             identical(yhatNLS, yhatNLSQA)
             
-            rsq_nls <- get_rsq(dt_spendModInput$exposure, yhatNLS) 
+            rsq_nls <- get_rsq(true = dt_spendModInput$exposure, predicted = yhatNLS)
           },
           
           error=function(cond) {
@@ -541,7 +551,7 @@ robyn_engineering <- function(InputCollect = InputCollect
         modLM <- lm(exposure ~ spend-1, data = dt_spendModInput)
         yhatLM <- predict(modLM)
         modLMSum <- summary(modLM)
-        rsq_lm <- get_rsq(dt_spendModInput$exposure, yhatLM) 
+        rsq_lm <- get_rsq(true = dt_spendModInput$exposure, predicted = yhatLM) 
         if (is.na(rsq_lm)) {stop("please check if ",paid_media_vars[i]," constains only 0")}
         
         # compare NLS & LM, takes LM if NLS fits worse
@@ -835,10 +845,19 @@ saturation_hill <- function(x, alpha, gamma, x_marginal = NULL) {
 ################################################
 #### Define r-squared function
 
-get_rsq <- function(true, predicted) {
+get_rsq <- function(true, predicted, p = NULL, df.int = NULL) {
+  
   sse <- sum((predicted - true)^2)
   sst <- sum((true - mean(true))^2)
   rsq <- 1 - sse / sst
+  
+  # adjusted rsq formula from summary.lm: ans$adj.r.squared <- 1 - (1 - ans$r.squared) * ((n - df.int)/rdf) # n = num_obs, p = num_indepvar, rdf = n-p-1
+  if (!is.null(p) & !is.null(df.int)) {
+    n <- length(true)
+    rdf <- n - p - 1
+    rsq <- 1 - (1 - rsq) * ((n - df.int)/rdf)
+  }
+  
   return(rsq)
 }
 
@@ -1013,8 +1032,10 @@ model_refit <- function(x_train, y_train, lambda, lower.limits, upper.limits) {
     ) # coef(mod)
   } #; plot(mod); print(mod)
   
+  df.int <- ifelse(coef(mod)[1] < 0, 0, 1)
+  
   y_trainPred <- predict(mod, s = lambda, newx = x_train)
-  rsq_train<- get_rsq(true = y_train, predicted = y_trainPred); rsq_train
+  rsq_train<- get_rsq(true = y_train, predicted = y_trainPred, p = ncol(x_train), df.int = df.int); rsq_train
   
   #y_testPred <- predict(mod, s = lambda, newx = x_test)
   #rsq_test <- get_rsq(true = y_test, predicted = y_testPred); rsq_test
@@ -1033,7 +1054,8 @@ model_refit <- function(x_train, y_train, lambda, lower.limits, upper.limits) {
                   #,mape_mod = mape_mod
                   ,coefs = coefs
                   ,y_pred = y_trainPred
-                  ,mod=mod)
+                  ,mod=mod
+                  ,df.int = df.int)
   
   return(mod_out)
 }
@@ -1056,7 +1078,6 @@ robyn_mmm <- function(...
   hypParamSamName <- hyper_names(adstock = InputCollect$adstock, all_media =InputCollect$all_media)
   hyper_fixed <- FALSE
   
-  #if (hyper_fixed==FALSE) {
   hyperCollect <- unlist(list(...), recursive = FALSE) # hyperCollect <- InputCollect$hyperparameters; hyperCollect <- hyperparameters_fixed
   
   # sort hyperparameter list by name
@@ -1089,17 +1110,6 @@ robyn_mmm <- function(...
     dt_hyperFixed <- as.data.table(matrix(hyper_bound_list_fixed, nrow = 1))
     names(dt_hyperFixed) <- hyper_bound_list_fixed_name
   }
-  
-  # } else {
-  #   #hyperCollect <- InputCollect$hyperparameters
-  #   #input.fixed <- dt_hyperResult
-  #   input.fixed <- list(...)[[1]]
-  #   hyper_count <- length(hypParamSamName)
-  #   hyper_bound_list_updated <- NULL
-  #   hyper_bound_list_updated_name <- NULL
-  #   hyper_bound_list_fixed <- NULL
-  #   lambda_fixed
-  # }
   
   ################################################
   #### Setup environment
@@ -1153,9 +1163,6 @@ robyn_mmm <- function(...
   ################################################
   #### Get spend share
   
-  #trainStartWhich <- which.min(abs(difftime(as.Date(dt_mod$ds), as.Date(InputCollect$window_start), units = "days")))
-  #dt_inputTrain <- InputCollect$dt_input[InputCollect$dt_input[, rank(.SD), .SDcols = InputCollect$date_var]]
-  #dt_inputTrain <- dt_inputTrain[trainStartWhich:nrow(dt_inputTrain)]
   dt_inputTrain <- InputCollect$dt_input[rollingWindowStartWhich:rollingWindowEndWhich]
   dt_spendShare <- dt_inputTrain[, .(rn = paid_media_vars,
                                      total_spend = sapply(.SD, sum),
@@ -1180,16 +1187,6 @@ robyn_mmm <- function(...
   t0 <- Sys.time()
   
   ## set iterations
-  # if (hyper_fixed == F) {
-  #   iterTotal <- iterations
-  #   iterPar <- cores
-  # } else if (hyper_count==0 & hyper_fixed == T) {
-  #   iterTotal <- 1
-  #   iterPar <- 1
-  # } else {
-  #   iterTotal <- nrow(input.fixed)
-  #   iterPar <- nrow(input.fixed)
-  # }
   
   if (hyper_fixed == F) {
     iterTotal <- iterations
@@ -1261,12 +1258,6 @@ robyn_mmm <- function(...
           hypParamSamNG <- cbind(hypParamSamNG, dt_hyperFixed)
           hypParamSamNG <- setcolorder(hypParamSamNG, hypParamSamName)
         }
-        # } else if (hyper_count==0 & hyper_fixed == T) {
-        #   hypParamSamNG <- as.data.table(matrix(unlist(hyper_bound_list), nrow = 1))
-        #   setnames(hypParamSamNG, names(hypParamSamNG), hypParamSamName)
-        # } else {
-        #   hypParamSamNG <- input.fixed[, hypParamSamName, with = F]
-        # }
       } else {
         hypParamSamNG <- as.data.table(matrix(unlist(hyper_bound_list), nrow = 1))
         setnames(hypParamSamNG, names(hypParamSamNG), hypParamSamName)
@@ -1279,8 +1270,8 @@ robyn_mmm <- function(...
       best_mape <- Inf
       # closeAllConnections()
       registerDoParallel(cores)  #registerDoParallel(cores=InputCollect$cores)
-      #al <- makeCluster(InputCollect$cores)
-      #registerDoParallel(al)
+      # al <- makeCluster(InputCollect$cores)
+      # registerDoParallel(al)
       getDoParWorkers()
       doparCollect <- foreach (
         i = 1:iterPar
@@ -1408,8 +1399,8 @@ robyn_mmm <- function(...
                            #,nlambda = 100
                            #,intercept = FALSE
         ) # plot(cvmod) coef(cvmod)
-        #head(predict(cvmod, newx=x_train, s="lambda.1se"))
-        #cbind(coef(cvmod1, s = "lambda.min"), coef(cvmod2, s = "lambda.min"), coef(cvmod3, s = "lambda.min"), coef(cvmod4, s = "lambda.min"))
+        # head(predict(cvmod, newx=x_train, s="lambda.1se"))
+        # cbind(coef(cvmod1, s = "lambda.min"), coef(cvmod2, s = "lambda.min"), coef(cvmod3, s = "lambda.min"), coef(cvmod4, s = "lambda.min"))
         
         #####################################
         #### refit ridge regression with selected lambda from x-validation
@@ -1430,6 +1421,7 @@ robyn_mmm <- function(...
         decompCollect <- model_decomp(coefs=mod_out$coefs, dt_modSaturated=dt_modSaturated, x=x_train, y_pred=mod_out$y_pred, i=i, dt_modRollWind=dt_modRollWind, refreshAddedStart = refreshAddedStart)
         nrmse <- mod_out$nrmse_train
         mape <- 0
+        df.int <- mod_out$df.int
         
         
         #####################################
@@ -1493,7 +1485,8 @@ robyn_mmm <- function(...
                                                  ,Elapsed = as.numeric(difftime(Sys.time(),t1, units = "secs"))
                                                  ,ElapsedAccum = as.numeric(difftime(Sys.time(),t0, units = "secs"))
                                                  ,iterPar= i
-                                                 ,iterNG = lng)],
+                                                 ,iterNG = lng
+                                                 ,df.int = df.int)],
           xDecompVec = if (hyper_fixed == T) {decompCollect$xDecompVec[, ':='(intercept = decompCollect$xDecompAgg[rn=="(Intercept)", xDecompAgg]
                                                                               ,mape = mape
                                                                               ,nrmse = nrmse
@@ -1503,7 +1496,8 @@ robyn_mmm <- function(...
                                                                               #,rsq_test = mod_out$rsq_test
                                                                               ,lambda=lambda
                                                                               ,iterPar= i
-                                                                              ,iterNG = lng)]} else{NULL} ,
+                                                                              ,iterNG = lng
+                                                                              ,df.int = df.int)]} else{NULL} ,
           xDecompAgg = decompCollect$xDecompAgg[, ':='(mape = mape
                                                        ,nrmse = nrmse
                                                        ,decomp.rssd = decomp.rssd
@@ -1512,7 +1506,8 @@ robyn_mmm <- function(...
                                                        #,rsq_test = mod_out$rsq_test
                                                        ,lambda=lambda
                                                        ,iterPar= i
-                                                       ,iterNG = lng)] ,
+                                                       ,iterNG = lng
+                                                       ,df.int = df.int)] ,
           liftCalibration = if (nrow(calibration_input)>0) {liftCollect[, ':='(mape = mape
                                                                                ,nrmse = nrmse
                                                                                ,decomp.rssd = decomp.rssd
@@ -1530,12 +1525,14 @@ robyn_mmm <- function(...
                                                       #,rsq_test = mod_out$rsq_test
                                                       ,lambda=lambda
                                                       ,iterPar= i
-                                                      ,iterNG = lng)],
+                                                      ,iterNG = lng
+                                                      ,df.int = df.int)],
           mape.lift = mape,
           nrmse = nrmse,
           decomp.rssd = decomp.rssd,
           iterPar = i,
-          iterNG = lng
+          iterNG = lng,
+          df.int = df.int
           #,cvmod = cvmod
         )
         
@@ -1609,19 +1606,19 @@ robyn_mmm <- function(...
     ,xDecompAgg =   rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompAgg))}))[order(nrmse)]
     ,liftCalibration = if(nrow(calibration_input)>0) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$liftCalibration))}))[order(mape, liftMedia, liftStart)]} else {NULL}
     ,decompSpendDist = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$decompSpendDist))}))[order(nrmse)]
-    #mape = unlist(lapply(doparCollect, function(x) x$mape)),
-    #iterRS = unlist(lapply(doparCollect, function(x) x$iterRS)),
-    #,paretoFront= as.data.table(pareto_results_ordered)
-    #,cvmod = lapply(doparCollect, function(x) x$cvmod)
+    # ,mape = unlist(lapply(doparCollect, function(x) x$mape))
+    # ,iterRS = unlist(lapply(doparCollect, function(x) x$iterRS))
+    # ,paretoFront= as.data.table(pareto_results_ordered)
+    # ,cvmod = lapply(doparCollect, function(x) x$cvmod)
   )
   resultCollect$iter <- length(resultCollect$mape)
-  #resultCollect$best.iter <- resultCollect$resultHypParam$iterRS[1]
+  # resultCollect$best.iter <- resultCollect$resultHypParam$iterRS[1]
   resultCollect$elapsed.min <- sysTimeDopar[3]/60
   resultCollect$resultHypParam[, ElapsedAccum:= ElapsedAccum - min(ElapsedAccum) + resultCollect$resultHypParam[which.min(ElapsedAccum), Elapsed]] # adjust accummulated time
   resultCollect$resultHypParam
-  #print(optimizer_name)
-  #print(" get ")
-  #please_stop_here()
+  # print(optimizer_name)
+  # print(" get ")
+  # please_stop_here()
   
   return(list(#Score =  -resultCollect$mape[iterRS], # score for BO
     resultCollect = resultCollect
@@ -2340,37 +2337,8 @@ robyn_run <- function(InputCollect
 }
 
 
-
-
-
 #####################################
-#### Define robyn_run_fixed, the function to load old model hyperparameters from csv
-
-# robyn_run_fixed <- function(plot_folder = getwd()
-#                             ,dt_hyppar_fixed = NULL
-#                             ,modID = NULL) {
-#   
-#   ## check condition
-#   if (!dir.exists(plot_folder)) {
-#     plot_folder <- getwd()
-#     message("provided plot_folder doesn't exist. Using default plot_folder = getwd(): ", getwd())
-#   }
-#   if (is.null(dt_hyppar_fixed)) {stop("Please provide the table OutputCollect$resultHypParam from previous runs or pareto_hyperparameters.csv with desired model IDs")}
-#   if (is.null(modID)) {stop("please provide modID")} else
-#     if (length(modID)>1) {stop("modID only accept one value")} else 
-#       if (!(modID %in% dt_hyppar_fixed$solID)) {stop(paste0("modID please provide one of these values: ", paste(dt_hyppar_fixed$solID, collapse = ", ")))}
-#   if (nrow(dt_hyppar_fixed)==0) {stop("solID not included in fixed_hyppar_dt")}
-#   
-#   ## run model
-#   robyn_run(listParam = parent.frame()$listParam
-#             ,listDT = parent.frame()$listDT
-#             ,plot_folder = plot_folder
-#             ,hyper_fixed = T
-#             ,dt_hyper_fixed = dt_hyppar_fixed[solID == modID])
-# }
-
-
-
+#### Define robyn_response function
 
 robyn_response <- function(robyn_object = NULL
                            , select_run = NULL
@@ -2494,6 +2462,8 @@ robyn_response <- function(robyn_object = NULL
 }
 
 
+#####################################
+#### Define robyn_save function
 
 robyn_save <- function(robyn_object
                        ,select_model
@@ -2531,7 +2501,8 @@ robyn_save <- function(robyn_object
 }
 
 
-
+#####################################
+#### Define robyn_refresh function
 
 robyn_refresh <- function(robyn_object
                           ,dt_input = dt_input
@@ -2731,7 +2702,7 @@ robyn_refresh <- function(robyn_object
                                                     , angle=270, hjust=-0.1, vjust=-0.2), color = "gray40" )+
       #geom_vline(xintercept = getRefreshStarts, linetype="dotted") + 
       labs(title="Model refresh: actual vs. predicted response"
-           ,subtitle = paste0("Assembled rsq: ", round(get_rsq(true=xDecompVecReportPlot$dep_var, predicted=xDecompVecReportPlot$depVarHat),2)
+           ,subtitle = paste0("Assembled rsq: ", round(get_rsq(true = xDecompVecReportPlot$dep_var, predicted = xDecompVecReportPlot$depVarHat),2)
                               #,"\nRefresh dates: ", paste(getRefreshStarts, collapse = ", ")
            )
            ,x="date" ,y="response")
@@ -2796,15 +2767,7 @@ robyn_refresh <- function(robyn_object
   invisible(Robyn)
 }
 
-load_libs <- function() {
-  
-  libsNeeded <- c("data.table","stringr","lubridate","doParallel","foreach","glmnet","car","StanHeaders","prophet","rstan","ggplot2","gridExtra","grid","ggpubr","see","PerformanceAnalytics","nloptr","minpack.lm","rPref","reticulate","rstudioapi","corrplot")
-  cat(paste0("Loading required libraries: ", paste(libsNeeded, collapse = ", "), "\n"))
-  libsInstalled <- rownames(installed.packages())
-  for (l in libsNeeded) {
-    if (require(l, character.only = T)) {} else {install.packages(l)}
-  }
-}
+
 
 
 
