@@ -13,6 +13,8 @@
 # DONE: organic channels
 # DONE: adapt param names, function names 
 # DONE: adapt getting fixed model result
+# DONE: new dummy vars newsletter and events
+# DONE: put max run as default for response function
 # add ROI report plot
 # adapt allocator for robyn_object
 # adapt dep type, CPA or add avg conv value for ROI
@@ -22,7 +24,7 @@
 # add pareto clustering
 # returning pParFront, change cat() to message() for shiny
 # clean up comments & prints
-# put max run as default for response function
+
 
 
 # adapt robyn_fixed
@@ -271,7 +273,7 @@ Robyn$listRefresh1$ReportCollect$xDecompAggReport[, .(refreshStatus, rn, mean_sp
 # get response for 80k
 Spend <- 50000
 Response <- robyn_response(robyn_object = robyn_object
-                           , select_run = 1 # 2 means the sedond refresh model. 0 means the initial model
+                           #, select_run = 1 # 2 means the sedond refresh model. 0 means the initial model
                            , paid_media_var = "search_clicks_P"
                            , Spend = Spend)
 Response/Spend # ROI for search 80k
@@ -279,10 +281,10 @@ Response/Spend # ROI for search 80k
 # get response for 80k+1
 Spend1 <- Spend+1000
 Response1 <- robyn_response(robyn_object = robyn_object
-                            , select_run = 1
+                            #, select_run = 1
                             , paid_media_var = "search_clicks_P"
                             , Spend = Spend1)
-Response1/Spend1 # ROI for search 80k
+Response1/Spend1 # ROI for search 80k+1
 
 # marginal ROI of 80k search
 (Response1-Response)/(Spend1-Spend)

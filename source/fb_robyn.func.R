@@ -2373,13 +2373,18 @@ robyn_response <- function(robyn_object = NULL
   
   ## get input
   if (!is.null(robyn_object)) {
-    if (is.null(select_run)) {stop("when providing robyn_object, must specify which model run as input 0, 1, 2, 3... while 0 means initial model")} 
+
     load(robyn_object)
     objectName <-  substr(robyn_object, start = max(gregexpr("/|\\\\", robyn_object)[[1]])+1, stop = max(gregexpr("RData", robyn_object)[[1]])-2)
     objectPath <- substr(robyn_object, start = 1, stop = max(gregexpr("/|\\\\", robyn_object)[[1]]))
     Robyn <- get(objectName) 
     
     select_run_all <- 0:(length(Robyn)-1)
+    if (is.null(select_run)) {
+      select_run <- max(select_run_all)
+      message("Using latest model: ", ifelse(select_run==0, "initial model",paste0("refresh model nr.",select_run))," for the response function. Use parameter select_run to specify which run to use. 0 means initial model")
+    }
+    
     if (!(select_run %in% select_run_all) | length(select_run) !=1) {stop("select_run must be one value of ", paste(select_run_all, collapse = ", "))}
     
     listName <- ifelse(select_run == 0, "listInit", paste0("listRefresh",select_run))
