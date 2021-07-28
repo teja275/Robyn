@@ -149,7 +149,7 @@ robyn_inputs <- function(dt_input
   
   ## check factor_vars
   if (!is.null(factor_vars)) {
-    if (!all(factor_vars %in% context_vars)) {stop("factor_vars must be from context_vars")}
+    if (!all(factor_vars %in% c(context_vars, organic_vars))) {stop("factor_vars must be from context_vars or organic_vars")}
   }
   
   ## check all vars
@@ -158,6 +158,13 @@ robyn_inputs <- function(dt_input
   ))
   all_ind_vars_check <- c(prophet_vars, context_vars, all_media)
   if(!identical(all_ind_vars, all_ind_vars_check)) {stop("Input variables must have unique names")}
+  
+  ## check data dimension
+  num_obs <- nrow(dt_input)
+  all_ind_vars
+  if (num_obs < length(all_ind_vars)*10 ) {
+    message("There are ",length(all_ind_vars), " independent variables & ", num_obs, " data points. We recommend row:column ratio >= 10:1")
+  }
   
   
   ## check window_start & window_end

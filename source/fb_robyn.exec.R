@@ -16,14 +16,17 @@
 # DONE: new dummy vars newsletter and events
 # DONE: put max run as default for response function
 # DONE: adapt dep type, CPA or add avg conv value for ROI
+# DONE: add observation warning
 # add ROI report plot
 # adapt allocator for robyn_object
-# add observation warning
+
 # add survey
+# clean up comments & prints
+
 # correlation matrix plot,  channel detail plot for selecte model (mROI)
 # add pareto clustering
 # returning pParFront, change cat() to message() for shiny
-# clean up comments & prints
+
 
 
 
@@ -139,7 +142,7 @@ InputCollect <- robyn_inputs(dt_input = dt_input
                              ,dt_holidays = dt_holidays
                              ,date_var = "DATE" # date format must be "2020-01-01"
                              ,dep_var = "revenue" # there should be only one dependent variable
-                             ,dep_var_type = "conversion" # "revenue" or "conversion"
+                             ,dep_var_type = "revenue" # "revenue" or "conversion"
                              
                              ,prophet_vars = c("trend", "season", "holiday") # "trend","season", "weekday", "holiday" are provided and case-sensitive. Recommended to at least keep Trend & Holidays
                              ,prophet_signs = c("default","default", "default") # c("default", "positive", and "negative"). Recommend as default. Must be same length as prophet_vars
