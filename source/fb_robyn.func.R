@@ -1043,41 +1043,41 @@ robyn_mmm <- function(...
     hyperCollect <- unlist(list(...), recursive = FALSE) # hyperCollect <- InputCollect$hyperparameters
     
     # sort hyperparameter list by name
-    hyper_bound_local <- list()
+    hyper_bound_list <- list()
     for (i in 1:length(hypParamSamName)) {
-      hyper_bound_local[i] <- hyperCollect[hypParamSamName[i]]
-      names(hyper_bound_local)[i] <- hypParamSamName[i]
+      hyper_bound_list[i] <- hyperCollect[hypParamSamName[i]]
+      names(hyper_bound_list)[i] <- hypParamSamName[i]
     }
     
     # get hyperparameters for Nevergrad
-    bounds_ng <- which(sapply(hyper_bound_local, length)==2)
-    hyper_bound_local_ng <- hyper_bound_local[bounds_ng]
-    hyper_bound_local_ng_name <- names(hyper_bound_local_ng)
-    num_hyppar_ng <- length(hyper_bound_local_ng)
-    if (num_hyppar_ng == 0) {fixed.out <- TRUE}
+    hyper_which <- which(sapply(hyper_bound_list, length)==2)
+    hyper_bound_list_updated <- hyper_bound_list[hyper_which]
+    hyper_bound_list_updated_name <- names(hyper_bound_list_updated)
+    hyper_count <- length(hyper_bound_list_updated)
+    if (hyper_count == 0) {fixed.out <- TRUE}
     
     # get fixed hyperparameters
-    bounds_fixed <- which(sapply(hyper_bound_local, length)==1)
-    hyper_bound_local_fixed <- hyper_bound_local[bounds_fixed]
-    hyper_bound_local_fixed_name <- names(hyper_bound_local_fixed)  
-    num_hyppar_fixed <- length(hyper_bound_local_fixed)
+    hyper_fixed_which <- which(sapply(hyper_bound_list, length)==1)
+    hyper_bound_list_fixed <- hyper_bound_list[hyper_fixed_which]
+    hyper_bound_list_fixed_name <- names(hyper_bound_list_fixed)  
+    hyper_count_fixed <- length(hyper_bound_list_fixed)
     
-    #hyper_bound_local_fixed <- list(print_S_alphas = 1 , print_S_gammas = 0.5)
+    #hyper_bound_list_fixed <- list(print_S_alphas = 1 , print_S_gammas = 0.5)
     if (InputCollect$cores >1) {
-      hyper_bound_local_fixed_dt <- data.table(sapply(hyper_bound_local_fixed, function(x) rep(x, InputCollect$cores)))
+      dt_hyperFixed <- data.table(sapply(hyper_bound_list_fixed, function(x) rep(x, InputCollect$cores)))
     } else {
-      hyper_bound_local_fixed_dt <- as.data.table(matrix(hyper_bound_local_fixed, nrow = 1))
-      names(hyper_bound_local_fixed_dt) <- hyper_bound_local_fixed_name
+      dt_hyperFixed <- as.data.table(matrix(hyper_bound_list_fixed, nrow = 1))
+      names(dt_hyperFixed) <- hyper_bound_list_fixed_name
     }
     
   } else {
     #hyperCollect <- InputCollect$hyperparameters
     #input.fixed <- dt_hyperResult
     input.fixed <- list(...)[[1]]
-    num_hyppar_ng <- length(hypParamSamName)
-    hyper_bound_local_ng <- NULL
-    hyper_bound_local_ng_name <- NULL
-    hyper_bound_local_fixed <- NULL
+    hyper_count <- length(hypParamSamName)
+    hyper_bound_list_updated <- NULL
+    hyper_bound_list_updated_name <- NULL
+    hyper_bound_list_fixed <- NULL
     fixed.lambda
   }
   
@@ -1163,7 +1163,7 @@ robyn_mmm <- function(...
   if (fixed.out == F) {
     iterTotal <- iterations
     iterPar <- cores
-  } else if (num_hyppar_ng==0 & fixed.out == T) {
+  } else if (hyper_count==0 & fixed.out == T) {
     iterTotal <- 1
     iterPar <- 1
   } else {
@@ -1172,12 +1172,12 @@ robyn_mmm <- function(...
   }
   iterNG <-  ifelse(fixed.out == F, ceiling(iterations/cores), 1)
   
-  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_local_ng),"hyperparameters,",lambda.n,"-fold ridge x-validation using",cores,"cores...\n")
+  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_list_updated),"hyperparameters,",lambda.n,"-fold ridge x-validation using",cores,"cores...\n")
   
   ## start Nevergrad optimiser
   
-  if (length(hyper_bound_local_ng) !=0) {
-    my_tuple <- tuple(num_hyppar_ng)
+  if (length(hyper_bound_list_updated) !=0) {
+    my_tuple <- tuple(hyper_count)
     instrumentation <- ng$p$Array(shape=my_tuple, lower=0., upper=1.)
     #instrumentation$set_bounds(0., 1.)
     optimizer <-  ng$optimizers$registry[optimizer_name](instrumentation, budget=iterTotal, num_workers=cores)
@@ -1213,9 +1213,9 @@ robyn_mmm <- function(...
           nevergrad_hp_val[[co]] <- nevergrad_hp[[co]]$value
           
           ## scale sample to given bounds
-          for (hypNameLoop in hyper_bound_local_ng_name) { # hypNameLoop <- local_name.all[1]
-            index <- which(hypNameLoop == hyper_bound_local_ng_name)
-            channelBound <- unlist(hyper_bound_local_ng[hypNameLoop])
+          for (hypNameLoop in hyper_bound_list_updated_name) { # hypNameLoop <- local_name.all[1]
+            index <- which(hypNameLoop == hyper_bound_list_updated_name)
+            channelBound <- unlist(hyper_bound_list_updated[hypNameLoop])
             hyppar_for_qunif <- nevergrad_hp_val[[co]][index]  
             hyppar_scaled <- qunif(hyppar_for_qunif, min(channelBound), max(channelBound))  
             hypParamSamNG[hypNameLoop] <- hyppar_scaled 
@@ -1224,16 +1224,16 @@ robyn_mmm <- function(...
         }
         
         hypParamSamNG<- rbindlist(hypParamSamList)
-        hypParamSamNG <- setnames(hypParamSamNG, names(hypParamSamNG), hyper_bound_local_ng_name)
+        hypParamSamNG <- setnames(hypParamSamNG, names(hypParamSamNG), hyper_bound_list_updated_name)
         
         ## add fixed hyperparameters
         
-        if (num_hyppar_fixed != 0) {
-          hypParamSamNG <- cbind(hypParamSamNG, hyper_bound_local_fixed_dt)
+        if (hyper_count_fixed != 0) {
+          hypParamSamNG <- cbind(hypParamSamNG, dt_hyperFixed)
           hypParamSamNG <- setcolorder(hypParamSamNG, hypParamSamName)
         }
-      } else if (num_hyppar_ng==0 & fixed.out == T) {
-        hypParamSamNG <- as.data.table(matrix(unlist(hyper_bound_local), nrow = 1))
+      } else if (hyper_count==0 & fixed.out == T) {
+        hypParamSamNG <- as.data.table(matrix(unlist(hyper_bound_list), nrow = 1))
         setnames(hypParamSamNG, names(hypParamSamNG), hypParamSamName)
       } else {
         hypParamSamNG <- input.fixed[, hypParamSamName, with = F]
@@ -1552,20 +1552,20 @@ robyn_mmm <- function(...
   #####################################
   #### Get nevergrad pareto results 
   
-  if (fixed.out == F) {
-    pareto_results <- data.table::transpose(rbind(as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$value[],4))),
-                                                  as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$losses[],4)))))
-    if (nrow(calibration_input)==0) {
-      pareto_results_names<-setnames(pareto_results, old=names(pareto_results), new=c(hyper_bound_local_ng_name,"nrmse", "decomp.rssd") )
-      pareto_results_ordered<-setorder(pareto_results_names, "nrmse", "decomp.rssd")
-    } else {
-      pareto_results_names<-setnames(pareto_results, old=names(pareto_results), new=c(hyper_bound_local_ng_name,"nrmse", "decomp.rssd", "mape.lift") )
-      pareto_results_ordered<-setorder(pareto_results_names, "nrmse", "decomp.rssd", "mape.lift")
-    }
-    #print(pareto_results_ordered)
-  } else {
-    pareto_results_ordered <- NULL
-  }
+  # if (fixed.out == F) {
+  #   pareto_results <- data.table::transpose(rbind(as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$value[],4))),
+  #                                                 as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$losses[],4)))))
+  #   if (nrow(calibration_input)==0) {
+  #     pareto_results_names<-setnames(pareto_results, old=names(pareto_results), new=c(hyper_bound_list_updated_name,"nrmse", "decomp.rssd") )
+  #     pareto_results_ordered<-setorder(pareto_results_names, "nrmse", "decomp.rssd")
+  #   } else {
+  #     pareto_results_names<-setnames(pareto_results, old=names(pareto_results), new=c(hyper_bound_list_updated_name,"nrmse", "decomp.rssd", "mape.lift") )
+  #     pareto_results_ordered<-setorder(pareto_results_names, "nrmse", "decomp.rssd", "mape.lift")
+  #   }
+  #   #print(pareto_results_ordered)
+  # } else {
+  #   pareto_results_ordered <- NULL
+  # }
   
   #####################################
   #### Final result collect
@@ -1578,7 +1578,7 @@ robyn_mmm <- function(...
     ,decompSpendDist = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$decompSpendDist))}))[order(nrmse)]
     #mape = unlist(lapply(doparCollect, function(x) x$mape)),
     #iterRS = unlist(lapply(doparCollect, function(x) x$iterRS)),
-    ,paretoFront= as.data.table(pareto_results_ordered)
+    #,paretoFront= as.data.table(pareto_results_ordered)
     #,cvmod = lapply(doparCollect, function(x) x$cvmod)
   )
   resultCollect$iter <- length(resultCollect$mape)
@@ -1592,8 +1592,8 @@ robyn_mmm <- function(...
   
   return(list(#Score =  -resultCollect$mape[iterRS], # score for BO
     resultCollect = resultCollect
-    ,hyperBoundNG = hyper_bound_local_ng
-    ,hyperBoundFixed = hyper_bound_local_fixed))
+    ,hyperBoundNG = hyper_bound_list_updated
+    ,hyperBoundFixed = hyper_bound_list_fixed))
 }
 
 
@@ -1632,7 +1632,7 @@ robyn_run <- function(InputCollect
   message("Input data has ", nrow(dt_mod), " ", InputCollect$intervalType, "s in total: "
           , dt_mod[, min(ds)], " to ", dt_mod[, max(ds)])
   message(ifelse(!refresh, "Initial", "Refresh")," model is built on rolling window of ", InputCollect$rollingWindowLength, " ", InputCollect$intervalType,"s: "
-          , InputCollect$window_start, " to ", InputCollect$set_rollingWindowEndDat)
+          , InputCollect$window_start, " to ", InputCollect$window_end)
   if (refresh) {message("Rolling window moving forward: ", InputCollect$refresh_steps, " ", InputCollect$intervalType)}
   
   
@@ -1727,17 +1727,17 @@ robyn_run <- function(InputCollect
         }
         
         model_output["trial"] <- ngt
-        ng_collect[[ngt]] <- model_output$resultCollect$paretoFront[, ':='(trial=ngt, iters = InputCollect$iterations, ng_optmz = optmz)]
+        #ng_collect[[ngt]] <- model_output$resultCollect$paretoFront[, ':='(trial=ngt, iters = InputCollect$iterations, ng_optmz = optmz)]
         model_output_collect[[ngt]] <- model_output
         #model_output_pareto <- robyn_mmm(InputCollect$hyperparameters, out = T)
       }
-      ng_collect <- rbindlist(ng_collect)
-      px <- low(ng_collect$nrmse) * low(ng_collect$decomp.rssd)
-      ng_collect <- psel(ng_collect, px, top = nrow(ng_collect))[order(trial, nrmse)]
-      ng_out[[which(ng_algos==optmz)]] <- ng_collect
+      # ng_collect <- rbindlist(ng_collect)
+      # px <- low(ng_collect$nrmse) * low(ng_collect$decomp.rssd)
+      # ng_collect <- psel(ng_collect, px, top = nrow(ng_collect))[order(trial, nrmse)]
+      # ng_out[[which(ng_algos==optmz)]] <- ng_collect
     }
-    ng_out <- rbindlist(ng_out)
-    setnames(ng_out, ".level", "manual_pareto")
+    # ng_out <- rbindlist(ng_out)
+    # setnames(ng_out, ".level", "manual_pareto")
     
   }
   

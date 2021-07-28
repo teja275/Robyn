@@ -12,6 +12,7 @@
 # DONE: add bar plot for reporting
 # DONE: organic channels
 # DONE: adapt param names, function names 
+# adapt or deprecate fixed
 # add ROI report plot
 # adapt allocator for robyn_object
 # adapt dep type, CPA or add avg conv value for ROI
@@ -194,7 +195,7 @@ OutputCollect <- robyn_run(InputCollect = InputCollect
 ######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
 ## save selected model
 OutputCollect$allSolutions
-select_model <- "1_21_5"
+select_model <- "1_20_3"
 robyn_save(robyn_object = robyn_object, select_model = select_model, InputCollect = InputCollect, OutputCollect = OutputCollect)
 # load(robyn_object)
 
