@@ -6,9 +6,9 @@
 ################################################################
 #### Define optimiser function
 
-robyn_allocator <- function(listInput
-                            ,listOutput
-                            ,modID = NULL
+robyn_allocator <- function(InputCollect
+                            ,OutputCollect
+                            ,select_model = NULL
                             ,optim_algo = "MMA_AUGLAG"
                             ,expected_spend = NULL
                             ,expected_spend_days = NULL
@@ -22,31 +22,31 @@ robyn_allocator <- function(listInput
   #####################################
   #### Set local environment
   
-  if (is.null(modID)) {
-    stop("must provide modID, the model ID")
+  if (is.null(select_model)) {
+    stop("must provide select_model, the model ID")
   }
   
-  cat("\nRunning budget allocator for model ID", modID, "...\n")
+  cat("\nRunning budget allocator for model ID", select_model, "...\n")
   
   
   ## get data 
-  dt_input = listInput$dt_input
-  dt_mod <- listInput$dt_mod
-  set_mediaVarName = listInput$set_mediaVarName
-  media_order <- order(set_mediaVarName)
-  set_mediaSpendName = listInput$set_mediaSpendName
-  mediaVarSorted <- set_mediaVarName[media_order]
-  mediaSpendSorted <- set_mediaSpendName[media_order]
-  exposureVarName <- listInput$exposureVarName
-  startRW = listInput$rollingWindowStartWhich
-  endRW = listInput$rollingWindowEndWhich
-  adstock = listInput$adstock
-  spendExpoMod = listInput$modNLSCollect
+  dt_input = InputCollect$dt_input
+  dt_mod <- InputCollect$dt_mod
+  paid_media_vars = InputCollect$paid_media_vars
+  media_order <- order(paid_media_vars)
+  paid_media_spends = InputCollect$paid_media_spends
+  mediaVarSorted <- paid_media_vars[media_order]
+  mediaSpendSorted <- paid_media_spends[media_order]
+  exposureVarName <- InputCollect$exposureVarName
+  startRW = InputCollect$rollingWindowStartWhich
+  endRW = InputCollect$rollingWindowEndWhich
+  adstock = InputCollect$adstock
+  spendExpoMod = InputCollect$modNLSCollect
   
-  dt_hyppar <- listOutput$resultHypParam[solID == modID]
-  if (!(modID %in% dt_hyppar$solID)) {stop("provided modID is not within the best results")}
+  dt_hyppar <- OutputCollect$resultHypParam[solID == select_model]
+  if (!(select_model %in% dt_hyppar$solID)) {stop("provided select_model is not within the best results")}
   
-  dt_bestCoef <- listOutput$xDecompAgg[solID == modID & rn %in% listInput$set_mediaVarName]
+  dt_bestCoef <- OutputCollect$xDecompAgg[solID == select_model & rn %in% InputCollect$paid_media_vars]
   
   ## check input parameters
   
@@ -57,12 +57,12 @@ robyn_allocator <- function(listInput
   }
   
   if (length(channel_constr_up)!=1) {
-    if (length(channel_constr_low)!= length(listInput$set_mediaVarName) | length(channel_constr_up)!= length(listInput$set_mediaVarName)) {
-      stop("channel_constr_low & channel_constr_up have to contain either only 1 value or have same length as listInput$set_mediaVarName")
+    if (length(channel_constr_low)!= length(InputCollect$paid_media_vars) | length(channel_constr_up)!= length(InputCollect$paid_media_vars)) {
+      stop("channel_constr_low & channel_constr_up have to contain either only 1 value or have same length as InputCollect$paid_media_vars")
     }
   }
   
-  names(channel_constr_low) <- set_mediaVarName; names(channel_constr_up) <- set_mediaVarName
+  names(channel_constr_low) <- paid_media_vars; names(channel_constr_up) <- paid_media_vars
   
   
   ## filter and sort
@@ -92,9 +92,9 @@ robyn_allocator <- function(listInput
   dt_optimCost <- dt_input[startRW:endRW, mediaSpendSortedFiltered, with = F]
   dt_bestCoef <- dt_bestCoef[rn %in% mediaVarSortedFiltered]
   
-  costMultiplierVec <- listInput$mediaCostFactor[mediaVarSortedFiltered]
+  costMultiplierVec <- InputCollect$mediaCostFactor[mediaVarSortedFiltered]
   
-  if(any(listInput$costSelector)) {
+  if(any(InputCollect$costSelector)) {
     dt_modNLS <- merge(data.table(channel=mediaVarSortedFiltered), spendExpoMod, all.x = T, by = "channel")
     vmaxVec <- dt_modNLS[order(rank(channel))][, Vmax]
     names(vmaxVec) <- mediaVarSortedFiltered
@@ -105,7 +105,7 @@ robyn_allocator <- function(listInput
     kmVec <- rep(0, length(mediaVarSortedFiltered))
   }
   
-  costSelectorSorted <- listInput$costSelector[media_order]
+  costSelectorSorted <- InputCollect$costSelector[media_order]
   costSelectorSorted <- costSelectorSorted[coefSelectorSorted]
   costSelectorSortedFiltered <- costSelectorSorted[mediaVarSortedFiltered]
   
@@ -113,9 +113,9 @@ robyn_allocator <- function(listInput
   channelConstrUpSorted <- channel_constr_up[media_order][coefSelectorSorted]
   
   ## get adstock parameters for each channel
-  if (listInput$adstock == "geometric") {
+  if (InputCollect$adstock == "geometric") {
     getAdstockHypPar <- unlist(dt_hyppar[, .SD, .SDcols = na.omit(str_extract(names(dt_hyppar),".*_thetas"))])
-  } else if (listInput$adstock == "weibull") {
+  } else if (InputCollect$adstock == "weibull") {
     getAdstockHypPar <- unlist(dt_hyppar[, .SD, .SDcols = na.omit(str_extract(names(dt_hyppar),".*_shapes|.*_scales"))])
   }
   
@@ -124,7 +124,7 @@ robyn_allocator <- function(listInput
   alphas <- hillHypParVec[str_which(names(hillHypParVec), "_alphas")]
   gammas <- hillHypParVec[str_which(names(hillHypParVec), "_gammas")]
   
-  chnAdstocked <- listOutput$mediaVecCollect[type == "adstockedMedia" & solID == modID, mediaVarSortedFiltered, with = F][startRW:endRW]
+  chnAdstocked <- OutputCollect$mediaVecCollect[type == "adstockedMedia" & solID == select_model, mediaVarSortedFiltered, with = F][startRW:endRW]
   gammaTrans <- mapply(function(gamma, x) {round(quantile(seq(range(x)[1], range(x)[2], length.out = 100), gamma),4)}
                        ,gamma = gammas
                        ,x = chnAdstocked)
@@ -133,7 +133,7 @@ robyn_allocator <- function(listInput
   coefs <- dt_coef[,coef]; names(coefs) <- dt_coef[,rn]
   
   ## build evaluation funciton
-  if(any(listInput$costSelector)) {
+  if(any(InputCollect$costSelector)) {
     mm_lm_coefs <- spendExpoMod$coef_lm
     names(mm_lm_coefs) <- spendExpoMod$channel
   } else {
@@ -141,8 +141,8 @@ robyn_allocator <- function(listInput
   }
   
   sl=4;coeff = coefs[sl]; alpha = alphas[sl]; gammaTran = gammaTrans[sl]; chnName = mediaVarSortedFiltered[sl]; vmax = vmaxVec[sl]; km = kmVec[sl]; criteria = costSelectorSortedFiltered[sl]
-  #coeff* f.hill(x=chnAdstocked[, get(chnName)], alpha = alpha, gamma = gammas[sl], x_marginal = f.micMen(x=256198.38, Vmax=vmax, Km=km))
-  coeff* f.hill(x=chnAdstocked[, get(chnName)], alpha = alpha, gamma = gammas[sl], x_marginal =257771.9)
+  #coeff* saturation_hill(x=chnAdstocked[, get(chnName)], alpha = alpha, gamma = gammas[sl], x_marginal = mic_men(x=256198.38, Vmax=vmax, Km=km))
+  coeff* saturation_hill(x=chnAdstocked[, get(chnName)], alpha = alpha, gamma = gammas[sl], x_marginal =257771.9)
   
   eval_f <- function(X) {
     return(
@@ -154,7 +154,7 @@ robyn_allocator <- function(listInput
                           , chnName, vmax, km, criteria) {
             # apply Michaelis Menten model to scale spend to exposure
             if (criteria) {
-              xScaled <- f.micMen(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
+              xScaled <- mic_men(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
             } else if (chnName %in% names(mm_lm_coefs)) {
               xScaled <- x * mm_lm_coefs[chnName]
             } else {
@@ -185,7 +185,7 @@ robyn_allocator <- function(listInput
                           , chnName, vmax, km, criteria) {
             # apply Michaelis Menten model to scale spend to exposure
             if (criteria) {
-              xScaled <- f.micMen(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
+              xScaled <- mic_men(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
             } else if (chnName %in% names(mm_lm_coefs)) {
               xScaled <- x * mm_lm_coefs[chnName]
             } else {
@@ -215,7 +215,7 @@ robyn_allocator <- function(listInput
             
             # apply Michaelis Menten model to scale spend to exposure
             if (criteria) {
-              xScaled <-  f.micMen(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
+              xScaled <-  mic_men(x=x, Vmax=vmax, Km=km) # vmax * x / (km + x)
             } else if (chnName %in% names(mm_lm_coefs)) {
               xScaled <- x * mm_lm_coefs[chnName]
             } else {
@@ -242,7 +242,7 @@ robyn_allocator <- function(listInput
   
   ## build contraints function with scenarios
   nPeriod <- nrow(dt_optimCost)
-  xDecompAggMedia <- listOutput$xDecompAgg[solID==modID & rn %in% listInput$set_mediaVarName][order(rank(rn))]
+  xDecompAggMedia <- OutputCollect$xDecompAgg[solID==select_model & rn %in% InputCollect$paid_media_vars][order(rank(rn))]
   
   if (scenario == "max_historical_response") {
     expected_spend <- sum(xDecompAggMedia$total_spend)
@@ -253,11 +253,11 @@ robyn_allocator <- function(listInput
     if (any(is.null(expected_spend), is.null(expected_spend_days))) {
       stop("when scenario = 'max_response_expected_spend', expected_spend and expected_spend_days must be provided")
     }
-    expSpendUnitTotal <- expected_spend / (expected_spend_days / listInput$dayInterval)
+    expSpendUnitTotal <- expected_spend / (expected_spend_days / InputCollect$dayInterval)
   }
   
   histSpend <- xDecompAggMedia[,.(rn, total_spend)]
-  histSpend <- histSpend$total_spend; names(histSpend) <- sort(listInput$set_mediaVarName)
+  histSpend <- histSpend$total_spend; names(histSpend) <- sort(InputCollect$paid_media_vars)
   #histSpend <- colSums(dt_optimCost)
   histSpendTotal <- sum(histSpend)
   histSpendUnitTotal <- sum(xDecompAggMedia$mean_spend) # histSpendTotal/ nPeriod
@@ -444,11 +444,11 @@ robyn_allocator <- function(listInput
   
   ## response curve
   
-  plotDT_saturation <- melt.data.table(listOutput$mediaVecCollect[solID==modID & type == "saturatedSpendReversed"], id.vars = "ds", measure.vars = listInput$set_mediaVarName, value.name = "spend", variable.name = "channel")
-  plotDT_decomp <- melt.data.table(listOutput$mediaVecCollect[solID==modID & type == "decompMedia"], id.vars = "ds", measure.vars = listInput$set_mediaVarName, value.name = "response", variable.name = "channel")
+  plotDT_saturation <- melt.data.table(OutputCollect$mediaVecCollect[solID==select_model & type == "saturatedSpendReversed"], id.vars = "ds", measure.vars = InputCollect$paid_media_vars, value.name = "spend", variable.name = "channel")
+  plotDT_decomp <- melt.data.table(OutputCollect$mediaVecCollect[solID==select_model & type == "decompMedia"], id.vars = "ds", measure.vars = InputCollect$paid_media_vars, value.name = "response", variable.name = "channel")
   plotDT_scurve <- cbind(plotDT_saturation, plotDT_decomp[, .(response)])
   plotDT_scurve <- plotDT_scurve[spend>=0] # remove outlier introduced by MM nls fitting
-  plotDT_scurveMeanResponse <- listOutput$xDecompAgg[solID==modID & rn %in% listInput$set_mediaVarName]
+  plotDT_scurveMeanResponse <- OutputCollect$xDecompAgg[solID==select_model & rn %in% InputCollect$paid_media_vars]
   dt_optimOutScurve <- rbind(dt_optimOut[, .(channels, initSpendUnit, initResponseUnit)][, type:="initial"], dt_optimOut[, .(channels, optmSpendUnit, optmResponseUnit)][, type:="optimised"], use.names = F)
   setnames(dt_optimOutScurve, c("channels", "spend", "response", "type"))
   
@@ -467,7 +467,7 @@ robyn_allocator <- function(listInput
          ,x="Spend" ,y="response")
   
   
-  grobTitle <- paste0("Budget allocator optimum result for model ID ", modID)
+  grobTitle <- paste0("Budget allocator optimum result for model ID ", select_model)
   
   # pgbl <- arrangeGrob(p13,p12,p11,p14, ncol=2, top = text_grob(grobTitle, size = 15, face = "bold"))
   # grid.draw(pgbl)
@@ -480,12 +480,12 @@ robyn_allocator <- function(listInput
   layout <- cbind(c(1,2), c(3,3))
   g <- grid.arrange(g13, g12, g14,   layout_matrix=layout, top = text_grob(grobTitle, size = 15, face = "bold"))
   
-  cat("\nSaving plots to ", paste0(listOutput$folder_path, modID,"_reallocated.png"), "...\n")
-  ggsave(filename=paste0(listOutput$folder_path, modID,"_reallocated.png")
+  cat("\nSaving plots to ", paste0(OutputCollect$folder_path, select_model,"_reallocated.png"), "...\n")
+  ggsave(filename=paste0(OutputCollect$folder_path, select_model,"_reallocated.png")
          , plot = g
          , dpi = 400, width = 18, height = 14)
   
-  fwrite(dt_optimOut, paste0(listOutput$folder_path, modID,"_reallocated.csv"))
+  fwrite(dt_optimOut, paste0(OutputCollect$folder_path, select_model,"_reallocated.csv"))
   
   listAllocator <- list(dt_optimOut=dt_optimOut, nlsMod=nlsMod)
   #assign("listOutputAllocator", listAllocator, envir = .GlobalEnv)
