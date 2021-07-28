@@ -15,9 +15,9 @@
 # DONE: adapt getting fixed model result
 # DONE: new dummy vars newsletter and events
 # DONE: put max run as default for response function
+# DONE: adapt dep type, CPA or add avg conv value for ROI
 # add ROI report plot
 # adapt allocator for robyn_object
-# adapt dep type, CPA or add avg conv value for ROI
 # add observation warning
 # add survey
 # correlation matrix plot,  channel detail plot for selecte model (mROI)
@@ -139,7 +139,7 @@ InputCollect <- robyn_inputs(dt_input = dt_input
                              ,dt_holidays = dt_holidays
                              ,date_var = "DATE" # date format must be "2020-01-01"
                              ,dep_var = "revenue" # there should be only one dependent variable
-                             ,dep_var_type = "revenue"
+                             ,dep_var_type = "conversion" # "revenue" or "conversion"
                              
                              ,prophet_vars = c("trend", "season", "holiday") # "trend","season", "weekday", "holiday" are provided and case-sensitive. Recommended to at least keep Trend & Holidays
                              ,prophet_signs = c("default","default", "default") # c("default", "positive", and "negative"). Recommend as default. Must be same length as prophet_vars
@@ -195,14 +195,14 @@ plot_saturation(F) # s-curve transformation example plot, helping you understand
 
 OutputCollect <- robyn_run(InputCollect = InputCollect
                            , plot_folder = robyn_object
-                           , pareto_fronts = 3
-                           , plot_pareto = FALSE)
+                           , pareto_fronts = 1
+                           , plot_pareto = T)
 
 
 ######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
 ## save selected model
 OutputCollect$allSolutions
-select_model <- "1_23_4"
+select_model <- "1_25_3"
 robyn_save(robyn_object = robyn_object, select_model = select_model, InputCollect = InputCollect, OutputCollect = OutputCollect)
 # load(robyn_object)
 
@@ -216,8 +216,7 @@ robyn_save(robyn_object = robyn_object, select_model = select_model, InputCollec
 ## Budget allocator result requires further validation. Please use this result with caution.
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
-OutputCollect$xDecompAgg[solID == select_model & !is.na(mean_spend), .(rn, coef,mean_spend, mean_response, roi, solID)] #check media summary for selected model
-
+OutputCollect$xDecompAgg[solID == select_model & !is.na(mean_spend), .(rn, coef,mean_spend, mean_response, roi_mean, total_spend, total_response=xDecompAgg, roi_total,  solID)] #check media summary for selected model
 AllocatorCollect <- robyn_allocator(InputCollect
                                     ,OutputCollect
                                     ,select_model = select_model # input one of the model IDs in model_output_collect$allSolutions to get optimisation result

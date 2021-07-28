@@ -338,7 +338,7 @@ robyn_allocator <- function(InputCollect
   
   ## collect output 
   
-  dt_bestModel <- dt_bestCoef[, .(rn, mean_spend, xDecompAgg, roi)][order(rank(rn))]
+  dt_bestModel <- dt_bestCoef[, .(rn, mean_spend, xDecompAgg, roi_total, roi_mean)][order(rank(rn))]
   
   dt_optimOut <- data.table(
     channels = mediaVarSortedFiltered

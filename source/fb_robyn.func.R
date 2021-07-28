@@ -83,6 +83,8 @@ robyn_inputs <- function(dt_input
     stop("Must provide only 1 correct dependent variable name for dep_var")
   } else if ( !(is.numeric(dt_input[, get(dep_var)]) | is.integer(dt_input[, get(dep_var)]))) {
     stop("dep_var must be numeric or integer")
+  } else if (!(dep_var_type %in% c("conversion", "revenue")) | length(dep_var_type)!=1) {
+    stop("dep_var_type must be conversion or revenue")
   }
   
   ## check prophet
@@ -457,7 +459,7 @@ robyn_engineering <- function(InputCollect = InputCollect
   dt_transform <- dt_transform[, ':='(ds= as.Date(ds))][order(ds)]
   dt_transformRollWind <- dt_transform[InputCollect$rollingWindowStartWhich:InputCollect$rollingWindowEndWhich]
   
-  setnames(dt_transform, InputCollect$dep_var, "depVar", skip_absent = T) #; InputCollect$dep_var <- "depVar"
+  setnames(dt_transform, InputCollect$dep_var, "dep_var", skip_absent = T) #; InputCollect$dep_var <- "dep_var"
   
   ################################################################
   #### model exposure metric from spend
@@ -607,7 +609,7 @@ robyn_engineering <- function(InputCollect = InputCollect
     if(any(length(InputCollect$prophet_vars)==0, length(InputCollect$prophet_signs)==0)) {stop("InputCollect$prophet_vars and InputCollect$prophet_signs must be both specified")}
     if(!(InputCollect$prophet_country %in% InputCollect$dt_holidays$country)) {stop("InputCollect$prophet_country must be already included in the holidays.csv and as ISO 3166-1 alpha-2 abbreviation")}
     
-    recurrance <- dt_transform[, .(ds = ds, y = depVar)]
+    recurrance <- dt_transform[, .(ds = ds, y = dep_var)]
     use_trend <- any(str_detect("trend", InputCollect$prophet_vars))
     use_season <- any(str_detect("season", InputCollect$prophet_vars))
     use_weekday <- any(str_detect("weekday", InputCollect$prophet_vars))
@@ -718,7 +720,7 @@ robyn_engineering <- function(InputCollect = InputCollect
   #### Finalize input
   
   #dt <- dt[, all_name, with = F]
-  dt_transform <- dt_transform[, c("ds", "depVar", all_ind_vars), with = F]
+  dt_transform <- dt_transform[, c("ds", "dep_var", all_ind_vars), with = F]
   
   InputCollect$dt_mod <- dt_transform
   InputCollect$dt_modRollWind <- dt_transform[InputCollect$rollingWindowStartWhich:InputCollect$rollingWindowEndWhich]
@@ -857,8 +859,8 @@ ridge_lambda <- function(x, y, seq_len = 100, lambda_min_ratio = 0.0001) {
 model_decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, refreshAddedStart) {
   
   ## input for decomp
-  y <- dt_modSaturated$depVar
-  indepVar <- dt_modSaturated[, (setdiff(names(dt_modSaturated), "depVar")), with = F]
+  y <- dt_modSaturated$dep_var
+  indepVar <- dt_modSaturated[, (setdiff(names(dt_modSaturated), "dep_var")), with = F]
   x <- as.data.table(x)
   intercept <- coefs[1]
   indepVarName <- names(indepVar)
@@ -1151,7 +1153,7 @@ robyn_mmm <- function(...
   dt_spendShare <- dt_inputTrain[, .(rn = paid_media_vars,
                                      total_spend = sapply(.SD, sum),
                                      mean_spend = sapply(.SD, function(x) ifelse(is.na(mean(x[x>0])),0, mean(x[x>0])))), .SDcols=paid_media_spends]
-  dt_spendShare[, ':='(spend_share = mean_spend / sum(mean_spend))]
+  dt_spendShare[, ':='(spend_share = total_spend / sum(total_spend))]
   
   refreshAddedStartWhich <- which(dt_modRollWind$ds==refreshAddedStart)
   dt_spendShareRF <- dt_inputTrain[refreshAddedStartWhich:rollingWindowLength, 
@@ -1159,7 +1161,7 @@ robyn_mmm <- function(...
                                      total_spend = sapply(.SD, sum),
                                      mean_spend = sapply(.SD, function(x) ifelse(is.na(mean(x[x>0])),0, mean(x[x>0])))) 
                                    ,.SDcols=paid_media_spends]
-  dt_spendShareRF[, ':='(spend_share = mean_spend / sum(mean_spend))]
+  dt_spendShareRF[, ':='(spend_share = total_spend / sum(total_spend))]
   dt_spendShare[, ':='(total_spend_refresh = dt_spendShareRF$total_spend
                        ,mean_spend_refresh = dt_spendShareRF$mean_spend
                        ,spend_share_refresh = dt_spendShareRF$spend_share)]
@@ -1351,10 +1353,10 @@ robyn_mmm <- function(...
         dt_train <- copy(dt_modSaturated)
         
         ## contrast matrix because glmnet does not treat categorical variables
-        y_train <- dt_train$depVar
-        x_train <- model.matrix(depVar ~., dt_train)[, -1]
-        #y_test <- dt_test$depVar
-        #x_test <- model.matrix(depVar ~., dt_test)[, -1]
+        y_train <- dt_train$dep_var
+        x_train <- model.matrix(dep_var ~., dt_train)[, -1]
+        #y_test <- dt_test$dep_var
+        #x_test <- model.matrix(dep_var ~., dt_test)[, -1]
         #y <- c(y_train, y_test)
         #x <- rbind(x_train, x_test)
         
@@ -1362,7 +1364,7 @@ robyn_mmm <- function(...
         # lambda_seq <- ridge_lambda(x=x_train, y=y_train, seq_len = lambda.n, lambda_min_ratio = 0.0001)
         
         ## define sign control
-        dt_sign <- dt_modSaturated[, !"depVar"] #names(dt_sign)
+        dt_sign <- dt_modSaturated[, !"dep_var"] #names(dt_sign)
         #x_sign <- if (activate_prophet) {c(prophet_signs, context_signs, paid_media_signs)} else {c(context_signs, paid_media_signs)}
         x_sign <- c(prophet_signs, context_signs, paid_media_signs, organic_signs)
         names(x_sign) <- c(prophet_vars, context_vars, paid_media_vars, organic_vars)
@@ -1439,8 +1441,8 @@ robyn_mmm <- function(...
         ## decomp objective: sum of squared distance between decomp share and spend share to be minimised
         dt_decompSpendDist <- decompCollect$xDecompAgg[rn %in% paid_media_vars, .(rn, xDecompPerc, xDecompMeanNon0Perc, xDecompMeanNon0, xDecompPercRF, xDecompMeanNon0PercRF, xDecompMeanNon0RF)]
         dt_decompSpendDist <- dt_decompSpendDist[dt_spendShare[, .(rn, spend_share, spend_share_refresh, mean_spend, total_spend)], on = "rn"]
-        dt_decompSpendDist[, ':='(effect_share= xDecompMeanNon0Perc/sum(xDecompMeanNon0Perc)
-                                  ,effect_share_refresh = xDecompMeanNon0PercRF/sum(xDecompMeanNon0PercRF))]
+        dt_decompSpendDist[, ':='(effect_share = xDecompPerc/sum(xDecompPerc)
+                                  ,effect_share_refresh = xDecompPercRF/sum(xDecompPercRF))]
         decompCollect$xDecompAgg[dt_decompSpendDist[, .(rn, spend_share_refresh, effect_share_refresh)], 
                                  ':='(spend_share_refresh = i.spend_share_refresh
                                       ,effect_share_refresh = i.effect_share_refresh), on = "rn"]
@@ -1828,12 +1830,15 @@ robyn_run <- function(InputCollect
     )
   }
   decompSpendDist[, mean_response:=resp_collect]
-  decompSpendDist[, roi := mean_response/mean_spend]
+  decompSpendDist[, ':='(roi_mean = mean_response/mean_spend
+                         ,roi_total = xDecompAgg/total_spend
+                         ,cpa_mean = if(InputCollect$dep_var_type=="conversion") {mean_spend/mean_response} else {NA}
+                         ,cpa_total = if(InputCollect$dep_var_type=="conversion") {total_spend/xDecompAgg} else {NA})]
   #decompSpendDist[, roi := xDecompMeanNon0/mean_spend]
   
   setkey(xDecompAgg,solID, rn)
   setkey(decompSpendDist,solID, rn)
-  xDecompAgg <- merge(xDecompAgg,decompSpendDist[, .(rn, solID, total_spend, mean_spend, spend_share, effect_share, roi)], all.x=TRUE)
+  xDecompAgg <- merge(xDecompAgg,decompSpendDist[, .(rn, solID, total_spend, mean_spend, spend_share, effect_share, roi_mean, roi_total, cpa_total)], all.x=TRUE)
   
   
   #####################################
@@ -1865,7 +1870,7 @@ robyn_run <- function(InputCollect
     if (!is.null(InputCollect$prophet_vars)) {
       # pProphet <- prophet_plot_components(InputCollect$modelRecurrance, InputCollect$forecastRecurrance, render_plot = T)
       
-      dt_plotProphet <- InputCollect$dt_mod[, c('ds','depVar', InputCollect$prophet_vars, InputCollect$factor_vars), with = F]
+      dt_plotProphet <- InputCollect$dt_mod[, c('ds','dep_var', InputCollect$prophet_vars, InputCollect$factor_vars), with = F]
       dt_plotProphet <- melt.data.table(dt_plotProphet, id.vars = 'ds')
       pProphet <- ggplot(dt_plotProphet, aes(x=ds, y=value)) + 
         geom_line(color='steelblue')+ 
@@ -1976,12 +1981,12 @@ robyn_run <- function(InputCollect
       decomp_rssd_plot <- plotMediaShareLoop[, round(unique(decomp.rssd),4)]
       mape_lift_plot <- ifelse(nrow(InputCollect$calibration_input)>0, plotMediaShareLoop[, round(unique(mape),4)], NA)
       
-      plotMediaShareLoop <- melt.data.table(plotMediaShareLoop, id.vars = c("rn", "nrmse", "decomp.rssd", "rsq_train" ), measure.vars = c("spend_share", "effect_share", "roi"))
+      suppressWarnings(plotMediaShareLoop <- melt.data.table(plotMediaShareLoop, id.vars = c("rn", "nrmse", "decomp.rssd", "rsq_train" ), measure.vars = c("spend_share", "effect_share", "roi_total", "cpa_total")))
       plotMediaShareLoop[, rn:= factor(rn, levels = sort(InputCollect$paid_media_vars))]
       plotMediaShareLoopBar <- plotMediaShareLoop[variable %in% c("spend_share", "effect_share")]
-      plotMediaShareLoopBar[, variable:= ifelse(variable=="spend_share", "avg.spend share", "avg.effect share")]
-      plotMediaShareLoopLine <- plotMediaShareLoop[variable =="roi"]
-      plotMediaShareLoopLine[, variable:= "avg.roi"]
+      #plotMediaShareLoopBar[, variable:= ifelse(variable=="spend_share", "total spend share", "total effect share")]
+      plotMediaShareLoopLine <- plotMediaShareLoop[variable ==ifelse(InputCollect$dep_var_type == "conversion", "cpa_total", "roi_total")]
+      #plotMediaShareLoopLine[, variable:= "roi_total"]
       ySecScale <- max(plotMediaShareLoopLine$value)/max(plotMediaShareLoopBar$value)*1.1
       
       p1 <- ggplot(plotMediaShareLoopBar, aes(x=rn, y=value, fill = variable)) +
@@ -1996,7 +2001,7 @@ robyn_run <- function(InputCollect
         coord_flip() +
         theme( legend.title = element_blank(), legend.position = c(0.9, 0.2) ,axis.text.x = element_blank()) +
         scale_fill_brewer(palette = "Paired") +
-        labs(title = "Share of Spend VS Share of Effect"
+        labs(title = paste0("Share of Spend VS Share of Effect with total ", ifelse(InputCollect$dep_var_type == "conversion", "CPA", "ROI"))
              ,subtitle = paste0("rsq_train: ", rsq_train_plot, 
                                 ", nrmse = ", nrmse_plot, 
                                 ", decomp.rssd = ", decomp_rssd_plot,
@@ -2212,27 +2217,27 @@ robyn_run <- function(InputCollect
       ## plot fitted vs actual
       
       if(!is.null(InputCollect$prophet_vars)) {
-        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", InputCollect$prophet_vars, InputCollect$context_vars), with=F], dt_transformSaturation[, InputCollect$all_media, with=F])
+        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "dep_var", InputCollect$prophet_vars, InputCollect$context_vars), with=F], dt_transformSaturation[, InputCollect$all_media, with=F])
       } else {
-        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "depVar", InputCollect$context_vars), with=F], dt_transformSaturation[, InputCollect$all_media, with=F])
+        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "dep_var", InputCollect$context_vars), with=F], dt_transformSaturation[, InputCollect$all_media, with=F])
       }
-      col_order <- c("ds", "depVar", InputCollect$all_ind_vars)
+      col_order <- c("ds", "dep_var", InputCollect$all_ind_vars)
       setcolorder(dt_transformDecomp, neworder = col_order)
       
       xDecompVec <- dcast.data.table(xDecompAgg[solID==uniqueSol[j], .(rn, coef, solID)],  solID ~ rn, value.var = "coef")
       if (!("(Intercept)" %in% names(xDecompVec))) {xDecompVec[, "(Intercept)":= 0]}
-      setcolorder(xDecompVec, neworder = c("solID", "(Intercept)",col_order[!(col_order %in% c("ds", "depVar"))]))
+      setcolorder(xDecompVec, neworder = c("solID", "(Intercept)",col_order[!(col_order %in% c("ds", "dep_var"))]))
       intercept <- xDecompVec$`(Intercept)`
       
       xDecompVec <- data.table(mapply(function(scurved,coefs) { scurved * coefs}, 
-                                      scurved=dt_transformDecomp[, !c("ds", "depVar"), with=F] , 
+                                      scurved=dt_transformDecomp[, !c("ds", "dep_var"), with=F] , 
                                       coefs = xDecompVec[, !c("solID", "(Intercept)")]))
       xDecompVec[, intercept:= intercept]
       xDecompVec[, ':='(depVarHat=rowSums(xDecompVec), solID = uniqueSol[j])]
-      xDecompVec <- cbind(dt_transformDecomp[, .(ds, depVar)], xDecompVec)
+      xDecompVec <- cbind(dt_transformDecomp[, .(ds, dep_var)], xDecompVec)
       
-      xDecompVecPlot <- xDecompVec[, .(ds, depVar, depVarHat)]
-      setnames(xDecompVecPlot, old = c("ds", "depVar", "depVarHat"), new = c("ds", "actual", "predicted"))
+      xDecompVecPlot <- xDecompVec[, .(ds, dep_var, depVarHat)]
+      setnames(xDecompVecPlot, old = c("ds", "dep_var", "depVarHat"), new = c("ds", "actual", "predicted"))
       suppressWarnings(xDecompVecPlotMelted <- melt.data.table(xDecompVecPlot, id.vars = "ds"))
       
       p5 <- ggplot(xDecompVecPlotMelted, aes(x=ds, y = value, color = variable)) +
@@ -2705,7 +2710,7 @@ robyn_refresh <- function(robyn_object
     dt_refreshDates
     # xDecompVecReportPlot <- fread("/Users/gufengzhou/Documents/GitHub/plots/2021-06-18 11.51 rf2/report_alldecomp_matrix.csv")
     
-    xDecompVecReportMelted <- melt.data.table(xDecompVecReportPlot[, .(ds, refreshStart, refreshEnd, refreshStatus, actual=depVar, predicted=depVarHat)] , id.vars = c("ds", "refreshStatus","refreshStart", "refreshEnd"))
+    xDecompVecReportMelted <- melt.data.table(xDecompVecReportPlot[, .(ds, refreshStart, refreshEnd, refreshStatus, actual=dep_var, predicted=depVarHat)] , id.vars = c("ds", "refreshStatus","refreshStart", "refreshEnd"))
     pFitRF <- ggplot(data=xDecompVecReportMelted) +
       geom_line(aes(x = ds, y = value, color = variable))+
       geom_rect(data = dt_refreshDates, aes(xmin = refreshStart, xmax = refreshEnd, fill = refreshStatus)
@@ -2719,7 +2724,7 @@ robyn_refresh <- function(robyn_object
                                                     , angle=270, hjust=-0.1, vjust=-0.2), color = "gray40" )+
       #geom_vline(xintercept = getRefreshStarts, linetype="dotted") + 
       labs(title="Model refresh: actual vs. predicted response"
-           ,subtitle = paste0("Assembled rsq: ", round(get_rsq(true=xDecompVecReportPlot$depVar, predicted=xDecompVecReportPlot$depVarHat),2)
+           ,subtitle = paste0("Assembled rsq: ", round(get_rsq(true=xDecompVecReportPlot$dep_var, predicted=xDecompVecReportPlot$depVarHat),2)
                               #,"\nRefresh dates: ", paste(getRefreshStarts, collapse = ", ")
            )
            ,x="date" ,y="response")
