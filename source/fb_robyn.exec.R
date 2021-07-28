@@ -12,7 +12,7 @@
 # DONE: add bar plot for reporting
 # DONE: organic channels
 # DONE: adapt param names, function names 
-# adapt or deprecate fixed
+# DONE: adapt getting fixed model result
 # add ROI report plot
 # adapt allocator for robyn_object
 # adapt dep type, CPA or add avg conv value for ROI
@@ -68,9 +68,6 @@ use_condaenv("r-reticulate")
 #import("nevergrad")
 
 dt_input <- fread(paste0(script_path, "de_simulated_data.csv"))
-dt_input <- copy(dt_input[, ':='(events=  as.factor(rep(c(rep("normal", 60), rep("event1",2), rep("normal", 40), rep("event2",2)),2))
-                                 ,launches = as.factor(rep(c(rep("no_launch", 30), rep("launch1",2), rep("no_launch", 70), rep("launch2",2)),2)))])
-
 dt_holidays <- fread(paste0(script_path, "holidays.csv"))
 robyn_object <- "/Users/gufengzhou/Documents/robyn_dev_output/Robyn.RData"
 registerDoSEQ(); detectCores()
@@ -94,7 +91,8 @@ registerDoSEQ(); detectCores()
 ## 3. set each hyperparameter bounds. They either contains two values e.g. c(0, 0.5), or only one value (in which case you've "fixed" that hyperparameter)
 set_adstock <- "geometric"
 paid_media_vars <- c("tv_S","ooh_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P") 
-hyper_names(adstock = set_adstock, paid_media_vars = paid_media_vars)
+organic_vars <- c("newsletter")
+hyper_names(adstock = set_adstock, all_media = c(paid_media_vars, organic_vars) )
 
 hyperparameters <- list(
   facebook_I_alphas = c(0.5, 3) # example bounds for alpha
@@ -126,6 +124,12 @@ hyperparameters <- list(
   ,ooh_S_thetas = c(0.1, 0.4)
   #,ooh_S_shapes = c(0.0001, 2)
   #,ooh_S_scales = c(0, 0.1)
+  
+  ,newsletter_alphas = c(0.5, 3)
+  ,newsletter_gammas = c(0.3, 1)
+  ,newsletter_thetas = c(0.1, 0.4)
+  #,newsletter_shapes = c(0.0001, 2)
+  #,newsletter_scales = c(0, 0.1)
 )
 
 
@@ -139,17 +143,17 @@ InputCollect <- robyn_inputs(dt_input = dt_input
                              ,prophet_signs = c("default","default", "default") # c("default", "positive", and "negative"). Recommend as default. Must be same length as prophet_vars
                              ,prophet_country = "DE" # only one country allowed once. Including national holidays for 59 countries, whose list can be found on our githut guide
                              
-                             ,context_vars = c("competitor_sales_B", "events", "launches") # typically competitors, price & promotion, temperature,  unemployment rate etc
-                             ,context_signs = c("default", "default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
+                             ,context_vars = c("competitor_sales_B", "events") # typically competitors, price & promotion, temperature,  unemployment rate etc
+                             ,context_signs = c("default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
                              
-                             ,paid_media_vars = paid_media_vars # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
+                             ,paid_media_vars = paid_media_vars# c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
                              ,paid_media_signs = c("positive", "positive","positive", "positive", "positive") # c("default", "positive", and "negative"), control the signs of coefficients for media variables
                              ,paid_media_spends = c("tv_S","ooh_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as paid_media_vars
                              
-                             #,organic_vars = c()
-                             #,organic_signs = c()
+                             ,organic_vars = organic_vars
+                             ,organic_signs = c("positive")
                              
-                             ,factor_vars = c("events", "launches") # please specify which variable above should be factor
+                             ,factor_vars = c("events") # please specify which variable above should be factor
                              
                              ################################################################
                              #### set global model parameters
@@ -192,10 +196,11 @@ OutputCollect <- robyn_run(InputCollect = InputCollect
                            , pareto_fronts = 3
                            , plot_pareto = FALSE)
 
+
 ######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
 ## save selected model
 OutputCollect$allSolutions
-select_model <- "1_20_3"
+select_model <- "1_23_4"
 robyn_save(robyn_object = robyn_object, select_model = select_model, InputCollect = InputCollect, OutputCollect = OutputCollect)
 # load(robyn_object)
 
@@ -285,5 +290,9 @@ Response1/Spend1 # ROI for search 80k
 # remotes::install_github("laresbernardo/Robyn")
 
 
+dt_hyper_fixed <- fread("/Users/gufengzhou/Documents/robyn_dev_output/2021-07-28 14.27 init/pareto_hyperparameters.csv")
 
+OutputCollectFixed <- robyn_run(InputCollect = InputCollect
+                                , plot_folder = robyn_object
+                                , dt_hyper_fixed = dt_hyper_fixed[solID == "1_20_3"])
 
