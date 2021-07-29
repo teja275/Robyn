@@ -1703,8 +1703,8 @@ robyn_run <- function(InputCollect
     model_output_collect[[1]]$resultCollect$xDecompVec[dt_IDs, on =.(iterPar), "solID" := .(i.solID)]
     model_output_collect[[1]]$resultCollect$decompSpendDist[dt_IDs, on =.(iterPar), "solID" := .(i.solID)]
     
-    cat("\n######################\nHyperparameters are all fixed\n######################\n")
-    print(model_output_collect[[1]]$resultCollect$xDecompAgg)
+    # cat("\n######################\nHyperparameters are all fixed\n######################\n")
+    # print(model_output_collect[[1]]$resultCollect$xDecompAgg)
     
     # } else if (hyper_fixed) {
     #   

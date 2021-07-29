@@ -49,29 +49,46 @@
 rm(list=ls()); gc()
 
 ################################################################
-#### load data & scripts
+#### setup environement
+
+## load scripts
 script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
 source(paste(script_path, "fb_robyn.func.R", sep=""))
 source(paste(script_path, "fb_robyn.optm.R", sep=""))
 
-## Please make sure to install all libraries before rurnning the scripts
+## load libraries
 load_libs()
-# virtualenv_create("r-reticulate")
-# use_virtualenv("r-reticulate", required = TRUE)
-# py_install("nevergrad", pip = TRUE)
 
-## please see https://rstudio.github.io/reticulate/index.html for info on installing reticulate
+## install the python library Nevergrad
+## please see here for more info about installing Python packages via reticulate - https://rstudio.github.io/reticulate/articles/python_packages.html
+
+## option 1 nevergrad installation via conda
 # conda_create("r-reticulate") # must run this line once
-# conda_install("r-reticulate", "nevergrad", pip=TRUE)  #  must install nevergrad in conda before running Robyn
-# use_python("/Users/gufengzhou/Library/r-miniconda/envs/r-reticulate/bin/python3.9") # in case nevergrad still can't be imported after installation, please locate your python file and run this line
-use_condaenv("r-reticulate") 
-#import("nevergrad")
+# conda_install("r-reticulate", "nevergrad", pip=TRUE) 
+use_condaenv("r-reticulate")
 
+## option 2 nevergrad installation via PIP
+# virtualenv_create("r-reticulate")
+# py_install("nevergrad", pip = TRUE)
+# use_virtualenv("r-reticulate", required = TRUE)
+
+## in case nevergrad still can't be imported after installation, please locate your python file and run this line
+# use_python("/Users/gufengzhou/Library/r-miniconda/envs/r-reticulate/bin/python3.9") 
+
+################################################################################
+####################    Building the first initial model  ######################
+
+################################################################
+#### load data
+
+## load input data & holiday. 
+## Please note the simulated dataset includes new variables "newsletter" and "events" now to demonstrate usage of factor_vars and organic_vars
 dt_input <- fread(paste0(script_path, "de_simulated_data.csv"))
 dt_holidays <- fread(paste0(script_path, "holidays.csv"))
+
+## IMPORTANT: robyn_object must has extension .RData. The object name can be changed.
 robyn_object <- "/Users/gufengzhou/Documents/robyn_dev_output/Robyn.RData"
 registerDoSEQ(); detectCores()
-
 
 ################################################################
 #### set model input & feature engineering
@@ -79,7 +96,9 @@ registerDoSEQ(); detectCores()
 #### Guidance to set hypereparameter bounds ####
 
 ## 1. get correct hyperparameter names:
-# run hyper_names() to get correct hyperparameter names. all names in hyperparameters must equal names in local_name, case sensitive
+# all variables in paid_media_vars or organic_vars require hyperprameter and will be transformed by adstock & saturation
+# difference between paid_media_vars and organic_vars is that paid_media_vars has spend that needs to be specified in paid_media_spends specifically
+# run hyper_names() to get correct hyperparameter names. all names in hyperparameters must equal names from hyper_names(), case sensitive
 
 ## 2. get guidance for setting hyperparameter bounds:
 # For geometric adstock, use theta, alpha & gamma. For weibull adstock, use shape, scale, alpha, gamma
@@ -93,7 +112,7 @@ registerDoSEQ(); detectCores()
 set_adstock <- "geometric"
 paid_media_vars <- c("tv_S","ooh_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P") 
 organic_vars <- c("newsletter")
-hyper_names(adstock = set_adstock, all_media = c(paid_media_vars, organic_vars) )
+hyper_names(adstock = set_adstock, all_media = c(paid_media_vars, organic_vars))
 
 hyperparameters <- list(
   facebook_I_alphas = c(0.5, 3) # example bounds for alpha
@@ -133,7 +152,7 @@ hyperparameters <- list(
   #,newsletter_scales = c(0, 0.1)
 )
 
-
+## run robyn_inputs function to specify model input
 InputCollect <- robyn_inputs(dt_input = dt_input
                              ,dt_holidays = dt_holidays
                              ,date_var = "DATE" # date format must be "2020-01-01"
@@ -148,19 +167,18 @@ InputCollect <- robyn_inputs(dt_input = dt_input
                              ,context_signs = c("default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
                              
                              ,paid_media_vars = paid_media_vars# c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
-                             ,paid_media_signs = c("positive", "positive","positive", "positive", "positive") # c("default", "positive", and "negative"), control the signs of coefficients for media variables
+                             ,paid_media_signs = c("positive", "positive","positive", "positive", "positive") # c("default", "positive", and "negative"). must have same length as paid_media_vars. control the signs of coefficients for media variables
                              ,paid_media_spends = c("tv_S","ooh_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as paid_media_vars
                              
                              ,organic_vars = organic_vars
-                             ,organic_signs = c("positive")
+                             ,organic_signs = c("positive") # must have same length as organic_vars
                              
-                             ,factor_vars = c("events") # please specify which variable above should be factor
+                             ,factor_vars = c("events") # specify which variables in context_vars and organic_vars are factorial
                              
                              ################################################################
                              #### set global model parameters
                              
                              ## set cores for parallel computing
-                             
                              ,cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
                              
                              ## set rolling window start (only works for whole dataset for now)
@@ -190,7 +208,7 @@ plot_adstock(F) # adstock transformation example plot, helping you understand ge
 plot_saturation(F) # s-curve transformation example plot, helping you understand hill/alpha/gamma transformatio
 
 ################################################################
-#### Run models
+#### Run the first model
 
 OutputCollect <- robyn_run(InputCollect = InputCollect
                            , plot_folder = robyn_object
@@ -198,21 +216,26 @@ OutputCollect <- robyn_run(InputCollect = InputCollect
                            , plot_pareto = T)
 
 
-######################### NOTE: must run robyn_save to select and save ONE model first, before refreshing below
-#### save selected model
+################################################################
+#### Select and save the model
 
+## compare all model onepagers and select one that mostly represents your business reality
 OutputCollect$allSolutions
 select_model <- "1_25_5"
-robyn_save(robyn_object = robyn_object, select_model = select_model, InputCollect = InputCollect, OutputCollect = OutputCollect)
+robyn_save(robyn_object = robyn_object
+           , select_model = select_model
+           , InputCollect = InputCollect
+           , OutputCollect = OutputCollect)
 
 
 ################################################################
-#### Budget Allocator - Beta
+#### Get budget allocation based on the selected model above
 
 ## Budget allocator result requires further validation. Please use this result with caution.
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
 OutputCollect$xDecompAgg[solID == select_model & !is.na(mean_spend), .(rn, coef,mean_spend, mean_response, roi_mean, total_spend, total_response=xDecompAgg, roi_total,  solID)] #check media summary for selected model
+
 AllocatorCollect <- robyn_allocator(InputCollect
                                     ,OutputCollect
                                     ,select_model = select_model # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
@@ -225,19 +248,23 @@ AllocatorCollect <- robyn_allocator(InputCollect
 )
 
 ## QA optimal response
-select_media <- "facebook_I"
-optimal_spend <- AllocatorCollect$dt_optimOut[channels== select_media, optmSpendUnit]
-optimal_response_allocator <- AllocatorCollect$dt_optimOut[channels== select_media, optmResponseUnit]
-optimal_response <- robyn_response(robyn_object = robyn_object
-                                   , select_run = 0
-                                   , paid_media_var = select_media
-                                   , Spend = optimal_spend)
-round(optimal_response_allocator) == round(optimal_response); optimal_response_allocator; optimal_response
+# select_media <- "facebook_I"
+# optimal_spend <- AllocatorCollect$dt_optimOut[channels== select_media, optmSpendUnit]
+# optimal_response_allocator <- AllocatorCollect$dt_optimOut[channels== select_media, optmResponseUnit]
+# optimal_response <- robyn_response(robyn_object = robyn_object
+#                                    , select_run = 0
+#                                    , paid_media_var = select_media
+#                                    , Spend = optimal_spend)
+# round(optimal_response_allocator) == round(optimal_response); optimal_response_allocator; optimal_response
 
+
+#############################################################################################
+####################    Refresh the initial model above with new data  ######################
 
 ################################################################
 #### Model refresh - Alpha
 
+## NOTE: must run robyn_save to select and save an initial model first, before refreshing below
 # source(paste(script_path, "fb_robyn.func.R", sep=""))
 
 Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
@@ -264,7 +291,7 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
 #### get marginal returns
 
 ## example of how to get marginal ROI for 80k spend for search channel from the second refresh model
-Robyn$listRefresh1$ReportCollect$xDecompAggReport[, .(refreshStatus, rn, mean_spend, mean_response, roi_mean, roi_total)]
+# Robyn$listRefresh1$ReportCollect$xDecompAggReport[, .(refreshStatus, rn, mean_spend, mean_response, roi_mean, roi_total)]
 
 # get response for 80k
 Spend <- 50000
@@ -286,8 +313,8 @@ Response1/Spend1 # ROI for search 80k+1
 (Response1-Response)/(Spend1-Spend)
 
 
-################################################################
-#### get old model results
+#####################################################################
+####################    Get old model results  ######################
 
 # get old hyperparameters and select model
 dt_hyper_fixed <- fread("/Users/gufengzhou/Documents/robyn_dev_output/2021-07-29 00.56 init/pareto_hyperparameters.csv")
