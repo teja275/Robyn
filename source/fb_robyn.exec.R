@@ -18,8 +18,8 @@
 # DONE: adapt dep type, CPA or add avg conv value for ROI
 # DONE: add observation warning
 # DONE: adjusted rsq
+# DONE: adapt allocator for robyn_object
 # add ROI report plot
-# adapt allocator for robyn_object
 # add survey
 # clean up comments & prints
 
@@ -213,7 +213,7 @@ plot_saturation(F) # s-curve transformation example plot, helping you understand
 OutputCollect <- robyn_run(InputCollect = InputCollect
                            , plot_folder = robyn_object
                            , pareto_fronts = 1
-                           , plot_pareto = T)
+                           , plot_pareto = FALSE)
 
 
 ################################################################
@@ -221,7 +221,7 @@ OutputCollect <- robyn_run(InputCollect = InputCollect
 
 ## compare all model onepagers and select one that mostly represents your business reality
 OutputCollect$allSolutions
-select_model <- "1_25_5"
+select_model <- "1_25_6"
 robyn_save(robyn_object = robyn_object
            , select_model = select_model
            , InputCollect = InputCollect
@@ -234,10 +234,10 @@ robyn_save(robyn_object = robyn_object
 ## Budget allocator result requires further validation. Please use this result with caution.
 ## Please don't interpret budget allocation result if there's no satisfying MMM result
 
-OutputCollect$xDecompAgg[solID == select_model & !is.na(mean_spend), .(rn, coef,mean_spend, mean_response, roi_mean, total_spend, total_response=xDecompAgg, roi_total,  solID)] #check media summary for selected model
+OutputCollect$xDecompAgg[solID == select_model & !is.na(mean_spend), .(rn, coef,mean_spend, mean_response, roi_mean, total_spend, total_response=xDecompAgg, roi_total, solID)] #check media summary for selected model
 
-AllocatorCollect <- robyn_allocator(InputCollect
-                                    ,OutputCollect
+AllocatorCollect <- robyn_allocator(InputCollect = InputCollect
+                                    ,OutputCollect = OutputCollect
                                     ,select_model = select_model # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
                                     ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
                                     ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
@@ -274,6 +274,17 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
                        , refresh_mode = "manual" # "auto" means the refresh function will move forward until no more data available
                        , refresh_iters = 150 # iteration for refresh
                        , refresh_trials = 1 # trial for refresh
+)
+
+## run
+AllocatorCollect <- robyn_allocator(robyn_object = robyn_object
+                                    # ,select_run
+                                    ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
+                                    ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
+                                    #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
+                                    #,expected_spend_days = 90 # specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
+                                    ,channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as paid_media_vars
+                                    ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
 )
 
 ######## Please check plot output folders. The following 4 reporting CSVs are new and accummulated result with all previous refreshes ...
@@ -326,7 +337,10 @@ OutputCollectFixed <- robyn_run(InputCollect = InputCollect # InputCollect must 
                                 , dt_hyper_fixed = dt_hyper_fixed) 
 
 # save Robyn object for further refresh
-robyn_save(robyn_object = robyn_object, select_model = select_model, InputCollect = InputCollect, OutputCollect = OutputCollectFixed)
+robyn_save(robyn_object = robyn_object
+           , select_model = select_model
+           , InputCollect = InputCollect
+           , OutputCollect = OutputCollectFixed)
 
 
 # remotes::install_github("laresbernardo/Robyn")

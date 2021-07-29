@@ -6,10 +6,12 @@
 ################################################################
 #### Define optimiser function
 
-robyn_allocator <- function(InputCollect
-                            ,OutputCollect
+robyn_allocator <- function(robyn_object = NULL
+                            ,select_run = NULL
+                            ,InputCollect = NULL
+                            ,OutputCollect = NULL
                             ,select_model = NULL
-                            ,optim_algo = "MMA_AUGLAG"
+                            ,optim_algo = "SLSQP_AUGLAG" # "SLSQP_AUGLAG" or "MMA_AUGLAG"
                             ,expected_spend = NULL
                             ,expected_spend_days = NULL
                             ,channel_constr_low = 0.5
@@ -22,14 +24,34 @@ robyn_allocator <- function(InputCollect
   #####################################
   #### Set local environment
   
-  if (is.null(select_model)) {
-    stop("must provide select_model, the model ID")
+  ## collect input
+  if (!is.null(robyn_object)) {
+    
+    load(robyn_object)
+    objectName <-  substr(robyn_object, start = max(gregexpr("/|\\\\", robyn_object)[[1]])+1, stop = max(gregexpr("RData", robyn_object)[[1]])-2)
+    objectPath <- substr(robyn_object, start = 1, stop = max(gregexpr("/|\\\\", robyn_object)[[1]]))
+    Robyn <- get(objectName) 
+    
+    select_run_all <- 0:(length(Robyn)-1)
+    if (is.null(select_run)) {
+      select_run <- max(select_run_all)
+      message("Using latest model: ", ifelse(select_run==0, "initial model",paste0("refresh model nr.",select_run))," for the response function. select_run = 0 selects initial model, 1 the first refresh etc")
+    }
+    
+    if (!(select_run %in% select_run_all) | length(select_run) !=1) {stop("select_run must be one value of ", paste(select_run_all, collapse = ", "))}
+    
+    listName <- ifelse(select_run == 0, "listInit", paste0("listRefresh",select_run))
+    InputCollect <- Robyn[[listName]][["InputCollect"]]
+    OutputCollect <- Robyn[[listName]][["OutputCollect"]]
+    select_model <- OutputCollect$selectID
+    
+  } else if (any(is.null(InputCollect), is.null(OutputCollect), is.null(select_model))) {
+    stop("when robyn_object is not provided, then InputCollect, OutputCollect, select_model must be provided")
   }
   
   cat("\nRunning budget allocator for model ID", select_model, "...\n")
   
-  
-  ## get data 
+  ## get data & params 
   dt_input = InputCollect$dt_input
   dt_mod <- InputCollect$dt_mod
   paid_media_vars = InputCollect$paid_media_vars
@@ -67,7 +89,7 @@ robyn_allocator <- function(InputCollect
   
   ## filter and sort
   
-  dt_mediaSpend <- dt_input[startRW:endRW, mediaSpendSorted, with = F]
+  dt_mediaSpend <- dt_input[startRW:endRW, mediaSpendSorted, with = FALSE]
   
   ## sort table and get filter for channels mmm coef reduced to 0
   dt_coef <- dt_bestCoef[, .(rn, coef)]
@@ -88,14 +110,14 @@ robyn_allocator <- function(InputCollect
   dt_hyppar <- dt_hyppar[, .SD, .SDcols = na.omit(str_extract(names(dt_hyppar),paste(paste0(mediaVarSortedFiltered,".*"),collapse = "|")))]
   setcolorder(dt_hyppar, sort(names(dt_hyppar)))
   
-  dt_optim <- dt_mod[, mediaVarSortedFiltered, with = F]
-  dt_optimCost <- dt_input[startRW:endRW, mediaSpendSortedFiltered, with = F]
+  dt_optim <- dt_mod[, mediaVarSortedFiltered, with = FALSE]
+  dt_optimCost <- dt_input[startRW:endRW, mediaSpendSortedFiltered, with = FALSE]
   dt_bestCoef <- dt_bestCoef[rn %in% mediaVarSortedFiltered]
   
   costMultiplierVec <- InputCollect$mediaCostFactor[mediaVarSortedFiltered]
   
   if(any(InputCollect$costSelector)) {
-    dt_modNLS <- merge(data.table(channel=mediaVarSortedFiltered), spendExpoMod, all.x = T, by = "channel")
+    dt_modNLS <- merge(data.table(channel=mediaVarSortedFiltered), spendExpoMod, all.x = TRUE, by = "channel")
     vmaxVec <- dt_modNLS[order(rank(channel))][, Vmax]
     names(vmaxVec) <- mediaVarSortedFiltered
     kmVec <- dt_modNLS[order(rank(channel))][, Km]
@@ -103,7 +125,7 @@ robyn_allocator <- function(InputCollect
   } else {
     vmaxVec <- rep(0, length(mediaVarSortedFiltered))
     kmVec <- rep(0, length(mediaVarSortedFiltered))
-  }
+  } 
   
   costSelectorSorted <- InputCollect$costSelector[media_order]
   costSelectorSorted <- costSelectorSorted[coefSelectorSorted]
@@ -124,7 +146,7 @@ robyn_allocator <- function(InputCollect
   alphas <- hillHypParVec[str_which(names(hillHypParVec), "_alphas")]
   gammas <- hillHypParVec[str_which(names(hillHypParVec), "_gammas")]
   
-  chnAdstocked <- OutputCollect$mediaVecCollect[type == "adstockedMedia" & solID == select_model, mediaVarSortedFiltered, with = F][startRW:endRW]
+  chnAdstocked <- OutputCollect$mediaVecCollect[type == "adstockedMedia" & solID == select_model, mediaVarSortedFiltered, with = FALSE][startRW:endRW]
   gammaTrans <- mapply(function(gamma, x) {round(quantile(seq(range(x)[1], range(x)[2], length.out = 100), gamma),4)}
                        ,gamma = gammas
                        ,x = chnAdstocked)
@@ -175,7 +197,7 @@ robyn_allocator <- function(InputCollect
           , alpha = alphas, gammaTran = gammaTrans
           , chnName = mediaVarSortedFiltered
           , vmax = vmaxVec, km = kmVec, criteria = costSelectorSortedFiltered
-          , SIMPLIFY = T)
+          , SIMPLIFY = TRUE)
         ),
         
         "gradient" = c(
@@ -204,7 +226,7 @@ robyn_allocator <- function(InputCollect
           , alpha = alphas, gammaTran = gammaTrans
           , chnName = mediaVarSortedFiltered
           , vmax = vmaxVec, km = kmVec, criteria = costSelectorSortedFiltered
-          , SIMPLIFY = T)
+          , SIMPLIFY = TRUE)
         ), # https://www.derivative-calculator.net/ on the objective function 1/(1+gamma^alpha / x^alpha)
         
         "objective.channel" =
@@ -234,7 +256,7 @@ robyn_allocator <- function(InputCollect
           , alpha = alphas, gammaTran = gammaTrans
           , chnName = mediaVarSortedFiltered
           , vmax = vmaxVec, km = kmVec, criteria = costSelectorSortedFiltered
-          , SIMPLIFY = T)
+          , SIMPLIFY = TRUE)
         
       ))}
   
@@ -449,15 +471,15 @@ robyn_allocator <- function(InputCollect
   plotDT_scurve <- cbind(plotDT_saturation, plotDT_decomp[, .(response)])
   plotDT_scurve <- plotDT_scurve[spend>=0] # remove outlier introduced by MM nls fitting
   plotDT_scurveMeanResponse <- OutputCollect$xDecompAgg[solID==select_model & rn %in% InputCollect$paid_media_vars]
-  dt_optimOutScurve <- rbind(dt_optimOut[, .(channels, initSpendUnit, initResponseUnit)][, type:="initial"], dt_optimOut[, .(channels, optmSpendUnit, optmResponseUnit)][, type:="optimised"], use.names = F)
+  dt_optimOutScurve <- rbind(dt_optimOut[, .(channels, initSpendUnit, initResponseUnit)][, type:="initial"], dt_optimOut[, .(channels, optmSpendUnit, optmResponseUnit)][, type:="optimised"], use.names = FALSE)
   setnames(dt_optimOutScurve, c("channels", "spend", "response", "type"))
   
   p14 <- ggplot(data= plotDT_scurve, aes(x=spend, y=response, color = channel)) +
     geom_line() +
     geom_point(data = dt_optimOutScurve, aes(x=spend, y=response, color = channels, shape = type), size = 2) +
-    geom_text(data = dt_optimOutScurve, aes(x=spend, y=response, color = channels, label = round(spend,0)),  show.legend = F, hjust = -0.2) +
+    geom_text(data = dt_optimOutScurve, aes(x=spend, y=response, color = channels, label = round(spend,0)),  show.legend = FALSE, hjust = -0.2) +
     #geom_point(data = dt_optimOut, aes(x=optmSpendUnit, y=optmResponseUnit, color = channels, fill = "optimised"), shape=2) +
-    #geom_text(data = dt_optimOut, aes(x=optmSpendUnit, y=optmResponseUnit, color = channels, label = round(optmSpendUnit,0)),  show.legend = F, hjust = -0.2) +
+    #geom_text(data = dt_optimOut, aes(x=optmSpendUnit, y=optmResponseUnit, color = channels, label = round(optmSpendUnit,0)),  show.legend = FALSE, hjust = -0.2) +
     theme(legend.position = c(0.9, 0.4), legend.title=element_blank()) +
     labs(title="Response curve and mean spend by channel"
          ,subtitle = paste0("rsq_train: ", plotDT_scurveMeanResponse[,round(mean(rsq_train),4)], 

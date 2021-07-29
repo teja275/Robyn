@@ -14,7 +14,7 @@ load_libs <- function() {
   cat(paste0("Loading required libraries: ", paste(libsNeeded, collapse = ", "), "\n"))
   libsInstalled <- rownames(installed.packages())
   for (l in libsNeeded) {
-    if (require(l, character.only = T)) {} else {install.packages(l)}
+    if (require(l, character.only = TRUE)) {} else {install.packages(l)}
   }
 }
 
@@ -139,9 +139,9 @@ robyn_inputs <- function(dt_input
     stop("Provided paid_media_spends is not included in input data")
   } else if (spendVarCount != mediaVarCount) {
     stop("paid_media_spends must have same length as paid_media_vars.")
-  } else if (any(dt_input[, unique(c(paid_media_vars, paid_media_spends)), with=F]<0)) {
+  } else if (any(dt_input[, unique(c(paid_media_vars, paid_media_spends)), with=FALSE]<0)) {
     check_media_names <- unique(c(paid_media_vars, paid_media_spends))
-    check_media_val <- sapply(dt_input[, check_media_names, with=F], function(X) { any(X <0) })
+    check_media_val <- sapply(dt_input[, check_media_names, with=FALSE], function(X) { any(X <0) })
     stop( paste(names(check_media_val)[check_media_val], collapse = ", "), " contains negative values. Media must be >=0")
   }
   
@@ -216,7 +216,7 @@ robyn_inputs <- function(dt_input
   
   rollingWindowLength <- rollingWindowEndWhich - rollingWindowStartWhich +1
   
-  dt_init <- dt_input[rollingWindowStartWhich:rollingWindowEndWhich, all_media, with =F]
+  dt_init <- dt_input[rollingWindowStartWhich:rollingWindowEndWhich, all_media, with =FALSE]
   init_all0 <- colSums(dt_init)==0
   if(any(init_all0)) {
     stop("These media channels contains only 0 within training period ",dt_input[rollingWindowStartWhich, get(date_var)], " to ", dt_input[rollingWindowEndWhich, get(date_var)], ": ", paste(names(dt_init)[init_all0], collapse = ", ")
@@ -225,7 +225,7 @@ robyn_inputs <- function(dt_input
   
   ## check adstock
   
-  if((adstock %in% c("geometric", "weibull")) == F) {stop("adstock must be 'geometric' or 'weibull'")}
+  if((adstock %in% c("geometric", "weibull")) == FALSE) {stop("adstock must be 'geometric' or 'weibull'")}
   
   ## check hyperparameter names in hyperparameters
   
@@ -314,7 +314,7 @@ robyn_inputs <- function(dt_input
   
   #listDT <- list(dt_input=dt_input, dt_holidays=dt_holidays, dt_mod=NULL, dt_modRollWind=NULL, xDecompAggPrev = NULL)
   
-  outFeatEng <- robyn_engineering(InputCollect = InputCollect, refresh = F)
+  outFeatEng <- robyn_engineering(InputCollect = InputCollect, refresh = FALSE)
   return(outFeatEng)
 }
 
@@ -449,7 +449,7 @@ format_unit <- function(x_in) {
     } else {
       x_out <- round(x,0)
     }
-  }, simplify = T) 
+  }, simplify = TRUE) 
   return(x_out)
 }
 
@@ -458,7 +458,7 @@ format_unit <- function(x_in) {
 
 
 robyn_engineering <- function(InputCollect = InputCollect
-                              , refresh = F) {
+                              , refresh = FALSE) {
   
   paid_media_vars <- InputCollect$paid_media_vars
   paid_media_spends <- InputCollect$paid_media_spends
@@ -472,11 +472,11 @@ robyn_engineering <- function(InputCollect = InputCollect
   dt_inputRollWind <- dt_input[InputCollect$rollingWindowStartWhich:InputCollect$rollingWindowEndWhich] # dt_inputRollWind <- InputCollect$dt_input[InputCollect$rollingWindowStartWhich:InputCollect$rollingWindowEndWhich]
   
   dt_transform <- copy(InputCollect$dt_input) # dt_transform <- copy(InputCollect$dt_input)
-  setnames(dt_transform, InputCollect$date_var, "ds", skip_absent = T)
+  setnames(dt_transform, InputCollect$date_var, "ds", skip_absent = TRUE)
   dt_transform <- dt_transform[, ':='(ds= as.Date(ds))][order(ds)]
   dt_transformRollWind <- dt_transform[InputCollect$rollingWindowStartWhich:InputCollect$rollingWindowEndWhich]
   
-  setnames(dt_transform, InputCollect$dep_var, "dep_var", skip_absent = T) #; InputCollect$dep_var <- "dep_var"
+  setnames(dt_transform, InputCollect$dep_var, "dep_var", skip_absent = TRUE) #; InputCollect$dep_var <- "dep_var"
   
   ################################################################
   #### model exposure metric from spend
@@ -492,7 +492,7 @@ robyn_engineering <- function(InputCollect = InputCollect
     plotNLSCollect <- list()
     for (i in 1:InputCollect$mediaVarCount) {
       if (costSelector[i]) {
-        dt_spendModInput <- dt_inputRollWind[, c(paid_media_spends[i],paid_media_vars[i]), with =F]
+        dt_spendModInput <- dt_inputRollWind[, c(paid_media_spends[i],paid_media_vars[i]), with =FALSE]
         setnames(dt_spendModInput, names(dt_spendModInput), c("spend", "exposure"))
         #dt_spendModInput <- dt_spendModInput[spend !=0 & exposure != 0]
         
@@ -502,7 +502,7 @@ robyn_engineering <- function(InputCollect = InputCollect
         
         # mod_nls <- nls(exposure ~ SSmicmen(spend, Vmax, Km)
         #                ,data = dt_spendModInput
-        #                ,control = nls.control(minFactor=1/2048, warnOnly = T))
+        #                ,control = nls.control(minFactor=1/2048, warnOnly = TRUE))
         
         # estimate starting values for nls
         # modLM <- lm(log(exposure) ~ spend, dt_spendModInput)
@@ -512,7 +512,7 @@ robyn_engineering <- function(InputCollect = InputCollect
         # modNLS <- nlsLM(exposure ~ Vmax * spend/(Km + spend), #Michaelis-Menten model Vmax * spend/(Km + spend)
         #                data = dt_spendModInput,
         #                start = nlsStartVal
-        #                ,control = nls.control(warnOnly = T)
+        #                ,control = nls.control(warnOnly = TRUE)
         # )
         
         tryCatch(
@@ -522,7 +522,7 @@ robyn_engineering <- function(InputCollect = InputCollect
             suppressWarnings(modNLS <- nlsLM(exposure ~ Vmax * spend/(Km + spend), #Michaelis-Menten model Vmax * spend/(Km + spend)
                                              data = dt_spendModInput,
                                              start = nlsStartVal
-                                             ,control = nls.control(warnOnly = T)))
+                                             ,control = nls.control(warnOnly = TRUE)))
             
             yhatNLS <- predict(modNLS)
             modNLSSum <- summary(modNLS)
@@ -539,7 +539,7 @@ robyn_engineering <- function(InputCollect = InputCollect
             # suppressWarnings(modNLS <- nlsLM(exposure ~ Vmax * spend/(Km + spend), #Michaelis-Menten model Vmax * spend/(Km + spend)
             #                                  data = dt_spendModInput,
             #                                  start = nlsStartVal
-            #                                  ,control = nls.control(warnOnly = T)))
+            #                                  ,control = nls.control(warnOnly = TRUE)))
             # warning("default start value for nls out of range. using c(1,1) instead")
             # return(modNLS)
             message("michaelis menten fitting for ", paid_media_vars[i]," out of range. using lm instead")
@@ -656,36 +656,36 @@ robyn_engineering <- function(InputCollect = InputCollect
     
     
     if (!is.null(factor_vars)) {
-      dt_regressors <- cbind(recurrance, dt_transform[, c(context_vars, paid_media_vars), with =F])
+      dt_regressors <- cbind(recurrance, dt_transform[, c(context_vars, paid_media_vars), with =FALSE])
       modelRecurrance <- prophet(holidays = if(use_holiday) {holidays[country==InputCollect$prophet_country]} else {NULL}
                                  ,yearly.seasonality = use_season
                                  ,weekly.seasonality = use_weekday
-                                 ,daily.seasonality= F)
+                                 ,daily.seasonality= FALSE)
       # for (addreg in factor_vars) {
       #   modelRecurrance <- add_regressor(modelRecurrance, addreg)
       # }
       
-      dt_ohe <- as.data.table(model.matrix(y ~., dt_regressors[, c("y",factor_vars), with =F])[,-1])
+      dt_ohe <- as.data.table(model.matrix(y ~., dt_regressors[, c("y",factor_vars), with =FALSE])[,-1])
       ohe_names <- names(dt_ohe)
       for (addreg in ohe_names) {
         modelRecurrance <- add_regressor(modelRecurrance, addreg)
       }
-      dt_ohe <- cbind(dt_regressors[, !factor_vars, with=F], dt_ohe)
+      dt_ohe <- cbind(dt_regressors[, !factor_vars, with=FALSE], dt_ohe)
       mod_ohe <- fit.prophet(modelRecurrance, dt_ohe)
       # prophet::regressor_coefficients(mxxx)
       dt_forecastRegressor <- predict(mod_ohe, dt_ohe)
       # prophet::prophet_plot_components(mod_ohe, dt_forecastRegressor)
       
-      forecastRecurrance <- dt_forecastRegressor[, str_detect(names(dt_forecastRegressor), "_lower$|_upper$", negate = T), with =F]
+      forecastRecurrance <- dt_forecastRegressor[, str_detect(names(dt_forecastRegressor), "_lower$|_upper$", negate = TRUE), with =FALSE]
       for (aggreg in factor_vars) {
         oheRegNames <- na.omit(str_extract(names(forecastRecurrance), paste0("^",aggreg, ".*")))
         forecastRecurrance[, (aggreg):=rowSums(.SD), .SDcols=oheRegNames]
         get_reg <- forecastRecurrance[, get(aggreg)]
-        dt_transform[, (aggreg):= scale(get_reg, center = min(get_reg), scale = F)]
+        dt_transform[, (aggreg):= scale(get_reg, center = min(get_reg), scale = FALSE)]
         #dt_transform[, (aggreg):= get_reg]
       }
       # modelRecurrance <- fit.prophet(modelRecurrance, dt_regressors)
-      # forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",context_vars, paid_media_vars), with =F])
+      # forecastRecurrance <- predict(modelRecurrance, dt_transform[, c("ds",context_vars, paid_media_vars), with =FALSE])
       # prophet_plot_components(modelRecurrance, forecastRecurrance)
       
     } else {
@@ -693,42 +693,42 @@ robyn_engineering <- function(InputCollect = InputCollect
                                 ,holidays = if(use_holiday) {holidays[country==InputCollect$prophet_country]} else {NULL}
                                 ,yearly.seasonality = use_season
                                 ,weekly.seasonality = use_weekday
-                                ,daily.seasonality= F
+                                ,daily.seasonality= FALSE
                                 #,changepoint.range = 0.8
                                 #,seasonality.mode = 'multiplicative'
                                 #,changepoint.prior.scale = 0.1
       )
       
       #futureDS <- make_future_dataframe(modelRecurrance, periods=1, freq = InputCollect$intervalType)
-      forecastRecurrance <- predict(modelRecurrance, dt_transform[, "ds", with =F])
+      forecastRecurrance <- predict(modelRecurrance, dt_transform[, "ds", with =FALSE])
       
     }
     
     # plot(modelRecurrance, forecastRecurrance)
-    # prophet_plot_components(modelRecurrance, forecastRecurrance, render_plot = T)
+    # prophet_plot_components(modelRecurrance, forecastRecurrance, render_plot = TRUE)
     
     if (use_trend) {
       fc_trend <- forecastRecurrance$trend[1:NROW(recurrance)]
       dt_transform[, trend := fc_trend]
-      # recurrance[, trend := scale(fc_trend, center = min(fc_trend), scale = F) + 1]
+      # recurrance[, trend := scale(fc_trend, center = min(fc_trend), scale = FALSE) + 1]
       # dt_transform[, trend := recurrance$trend]
     }
     if (use_season) {
       fc_season <- forecastRecurrance$yearly[1:NROW(recurrance)]
       dt_transform[, season := fc_season]
-      # recurrance[, seasonal := scale(fc_season, center = min(fc_season), scale = F) + 1]
+      # recurrance[, seasonal := scale(fc_season, center = min(fc_season), scale = FALSE) + 1]
       # dt_transform[, season := recurrance$seasonal]
     }
     if (use_weekday) {
       fc_weekday <- forecastRecurrance$weekly[1:NROW(recurrance)]
       dt_transform[, weekday := fc_weekday]
-      # recurrance[, weekday := scale(fc_weekday, center = min(fc_weekday), scale = F) + 1]
+      # recurrance[, weekday := scale(fc_weekday, center = min(fc_weekday), scale = FALSE) + 1]
       # dt_transform[, weekday := recurrance$weekday]
     }
     if (use_holiday) {
       fc_holiday <- forecastRecurrance$holidays[1:NROW(recurrance)]
       dt_transform[, holiday := fc_holiday]
-      # recurrance[, holidays := scale(fc_holiday, center = min(fc_holiday), scale = F) + 1]
+      # recurrance[, holidays := scale(fc_holiday, center = min(fc_holiday), scale = FALSE) + 1]
       # dt_transform[, holiday := recurrance$holidays]
     }
   }
@@ -736,8 +736,8 @@ robyn_engineering <- function(InputCollect = InputCollect
   ################################################################
   #### Finalize input
   
-  #dt <- dt[, all_name, with = F]
-  dt_transform <- dt_transform[, c("ds", "dep_var", all_ind_vars), with = F]
+  #dt <- dt[, all_name, with = FALSE]
+  dt_transform <- dt_transform[, c("ds", "dep_var", all_ind_vars), with = FALSE]
   
   InputCollect$dt_mod <- dt_transform
   InputCollect$dt_modRollWind <- dt_transform[InputCollect$rollingWindowStartWhich:InputCollect$rollingWindowEndWhich]
@@ -780,7 +780,7 @@ hyper_names <- function(adstock = InputCollect$adstock, all_media=InputCollect$a
 ################################################
 #### Define Michaelis Menten function
 
-mic_men <- function(x, Vmax, Km, reverse = F) {
+mic_men <- function(x, Vmax, Km, reverse = FALSE) {
   if (!reverse) {
     mm_out <- exposure <- Vmax * x/(Km + x)
   } else {
@@ -886,7 +886,7 @@ model_decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, r
   
   ## input for decomp
   y <- dt_modSaturated$dep_var
-  indepVar <- dt_modSaturated[, (setdiff(names(dt_modSaturated), "dep_var")), with = F]
+  indepVar <- dt_modSaturated[, (setdiff(names(dt_modSaturated), "dep_var")), with = FALSE]
   x <- as.data.table(x)
   intercept <- coefs[1]
   indepVarName <- names(indepVar)
@@ -908,9 +908,9 @@ model_decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, r
   xDecompOutPerc.scaled <- abs(xDecomp)/y_hat.scaled
   xDecompOut.scaled <- y_hat*xDecompOutPerc.scaled
   
-  xDecompOutAgg <- sapply(xDecompOut[, c("intercept", indepVarName), with =F], function(x) sum(x))
+  xDecompOutAgg <- sapply(xDecompOut[, c("intercept", indepVarName), with =FALSE], function(x) sum(x))
   xDecompOutAggPerc <- xDecompOutAgg / sum(y_hat)
-  xDecompOutAggMeanNon0 <- sapply(xDecompOut[, c("intercept", indepVarName), with =F], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x!=0])))
+  xDecompOutAggMeanNon0 <- sapply(xDecompOut[, c("intercept", indepVarName), with =FALSE], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x!=0])))
   xDecompOutAggMeanNon0[is.nan(xDecompOutAggMeanNon0)] <- 0
   xDecompOutAggMeanNon0Perc <- xDecompOutAggMeanNon0/sum(xDecompOutAggMeanNon0)
   #xDecompOutAggPerc.scaled <- abs(xDecompOutAggPerc)/sum(abs(xDecompOutAggPerc))
@@ -919,14 +919,14 @@ model_decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, r
   refreshAddedStartWhich <- which(xDecompOut$ds==refreshAddedStart)
   refreshAddedEnd <- max(xDecompOut$ds)
   refreshAddedEndWhich <- which(xDecompOut$ds==refreshAddedEnd)
-  xDecompOutAggRF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =F], function(x) sum(x))
+  xDecompOutAggRF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =FALSE], function(x) sum(x))
   y_hatRF <- y_hat[refreshAddedStartWhich:refreshAddedEndWhich]
   xDecompOutAggPercRF <- xDecompOutAggRF / sum(y_hatRF)
-  xDecompOutAggMeanNon0RF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =F], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x!=0])))
+  xDecompOutAggMeanNon0RF <- sapply(xDecompOut[refreshAddedStartWhich:refreshAddedEndWhich, c("intercept", indepVarName), with =FALSE], function(x) ifelse(is.na(mean(x[x>0])),0,mean(x[x!=0])))
   xDecompOutAggMeanNon0RF[is.nan(xDecompOutAggMeanNon0RF)] <- 0
   xDecompOutAggMeanNon0PercRF <- xDecompOutAggMeanNon0RF/sum(xDecompOutAggMeanNon0RF)
   
-  coefsOut <- data.table(coefs, keep.rownames = T)
+  coefsOut <- data.table(coefs, keep.rownames = TRUE)
   coefsOutCat <- copy(coefsOut)
   coefsOut[, rn := if (length(indepVarCat) == 0) {rn} else {sapply(indepVarCat, function(x) str_replace(coefsOut$rn, paste0(x,".*"), x))}]
   coefsOut <- coefsOut[, .(coef = mean(s0)), by = rn]
@@ -954,7 +954,7 @@ model_decomp <- function(coefs, dt_modSaturated, x, y_pred, i, dt_modRollWind, r
 
 calibrate_mmm <- function(decompCollect, calibration_input=InputCollect$calibration_input, paid_media_vars=InputCollect$paid_media_vars) {
   
-  check_set_lift <- any(sapply(calibration_input$channel, function(x) any(str_detect(x, paid_media_vars)))==F) #check if any lift channel doesnt have media var
+  check_set_lift <- any(sapply(calibration_input$channel, function(x) any(str_detect(x, paid_media_vars)))==FALSE) #check if any lift channel doesnt have media var
   if (check_set_lift) {stop("calibration_input channels must have media variable")}
   ## prep lift input
   getLiftMedia <- unique(calibration_input$channel)
@@ -972,8 +972,8 @@ calibrate_mmm <- function(decompCollect, calibration_input=InputCollect$calibrat
       ## get lift period subset
       liftStart <- calibration_input[liftWhich[lw], liftStartDate]
       liftEnd <- calibration_input[liftWhich[lw], liftEndDate]
-      liftPeriodVec <- getDecompVec[ds >= liftStart & ds <= liftEnd, c("ds", getLiftMedia[m]), with = F]
-      liftPeriodVecDependent <- getDecompVec[ds >= liftStart & ds <= liftEnd, c("ds", "y"), with = F]
+      liftPeriodVec <- getDecompVec[ds >= liftStart & ds <= liftEnd, c("ds", getLiftMedia[m]), with = FALSE]
+      liftPeriodVecDependent <- getDecompVec[ds >= liftStart & ds <= liftEnd, c("ds", "y"), with = FALSE]
       
       ## scale decomp
       mmmDays <- nrow(liftPeriodVec) * 7
@@ -1188,7 +1188,7 @@ robyn_mmm <- function(...
   
   ## set iterations
   
-  if (hyper_fixed == F) {
+  if (hyper_fixed == FALSE) {
     iterTotal <- iterations
     iterPar <- cores
   } else {
@@ -1196,7 +1196,7 @@ robyn_mmm <- function(...
     iterPar <- 1
   }
   
-  iterNG <-  ifelse(hyper_fixed == F, ceiling(iterations/cores), 1)
+  iterNG <-  ifelse(hyper_fixed == FALSE, ceiling(iterations/cores), 1)
   
   cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_list_updated),"hyperparameters,",lambda.n,"-fold ridge x-validation using",cores,"cores...\n")
   
@@ -1220,7 +1220,7 @@ robyn_mmm <- function(...
   resultCollectNG <- list()
   cnt <- 0
   cat('\n',"Working with: ", optimizer_name,'\n')
-  if(hyper_fixed==F) {pb <- txtProgressBar(max = iterTotal, style = 3)}
+  if(hyper_fixed==FALSE) {pb <- txtProgressBar(max = iterTotal, style = 3)}
   assign("InputCollect", InputCollect, envir = .GlobalEnv) # adding this to enable InputCollect reading during parallel
   #opts <- list(progress = function(n) setTxtProgressBar(pb, n))
   sysTimeDopar <- system.time({
@@ -1231,7 +1231,7 @@ robyn_mmm <- function(...
       hypParamSamList <- list()
       hypParamSamNG <- c()
       
-      if (hyper_fixed == F) {
+      if (hyper_fixed == FALSE) {
         for (co in 1:iterPar) {
           
           ## get hyperparameter sample with ask
@@ -1372,8 +1372,8 @@ robyn_mmm <- function(...
         
         for (s in 1:length(check_factor)) {
           
-          if (check_factor[s]==T) {
-            level.n <- length(levels(unlist(dt_sign[, s, with=F])))
+          if (check_factor[s]==TRUE) {
+            level.n <- length(levels(unlist(dt_sign[, s, with=FALSE])))
             if (level.n <=1) {stop("factor variables must have more than 1 level")}
             lower_vec <- if(x_sign[s] == "positive") {rep(0, level.n-1)} else {rep(-Inf, level.n-1)}
             upper_vec <- if(x_sign[s] == "negative") {rep(0, level.n-1)} else {rep(Inf, level.n-1)}
@@ -1407,7 +1407,7 @@ robyn_mmm <- function(...
         
         
         ## if no lift calibration, refit using best lambda
-        if (hyper_fixed == F) {
+        if (hyper_fixed == FALSE) {
           mod_out <- model_refit(x_train, y_train, lambda=cvmod$lambda.1se, lower.limits, upper.limits)
           lambda <- cvmod$lambda.1se
         } else {
@@ -1487,7 +1487,7 @@ robyn_mmm <- function(...
                                                  ,iterPar= i
                                                  ,iterNG = lng
                                                  ,df.int = df.int)],
-          xDecompVec = if (hyper_fixed == T) {decompCollect$xDecompVec[, ':='(intercept = decompCollect$xDecompAgg[rn=="(Intercept)", xDecompAgg]
+          xDecompVec = if (hyper_fixed == TRUE) {decompCollect$xDecompVec[, ':='(intercept = decompCollect$xDecompAgg[rn=="(Intercept)", xDecompAgg]
                                                                               ,mape = mape
                                                                               ,nrmse = nrmse
                                                                               ,decomp.rssd = decomp.rssd
@@ -1570,19 +1570,19 @@ robyn_mmm <- function(...
       
       resultCollectNG[[lng]] <- doparCollect
       cnt <- cnt + iterPar
-      if(hyper_fixed==F) {setTxtProgressBar(pb, cnt)}
+      if(hyper_fixed==FALSE) {setTxtProgressBar(pb, cnt)}
       
     } ## end NG loop
   }) # end system.time
   
   cat("\n Finished in",sysTimeDopar[3]/60,"mins\n")
-  if(hyper_fixed==F) {close(pb)}
+  if(hyper_fixed==FALSE) {close(pb)}
   registerDoSEQ(); getDoParWorkers()
   
   #####################################
   #### Get nevergrad pareto results 
   
-  # if (hyper_fixed == F) {
+  # if (hyper_fixed == FALSE) {
   #   pareto_results <- data.table::transpose(rbind(as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$value[],4))),
   #                                                 as.data.table(sapply(optimizer$pareto_front(997, subset="domain-covering", subset_tentatives=500), function(p) round(p$losses[],4)))))
   #   if (nrow(calibration_input)==0) {
@@ -1602,7 +1602,7 @@ robyn_mmm <- function(...
   
   resultCollect <- list(
     resultHypParam = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$resultHypParam))}))[order(nrmse)]
-    ,xDecompVec = if (hyper_fixed==T) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompVec))}))[order(nrmse, ds)]} else {NULL}
+    ,xDecompVec = if (hyper_fixed==TRUE) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompVec))}))[order(nrmse, ds)]} else {NULL}
     ,xDecompAgg =   rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$xDecompAgg))}))[order(nrmse)]
     ,liftCalibration = if(nrow(calibration_input)>0) {rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$liftCalibration))}))[order(mape, liftMedia, liftStart)]} else {NULL}
     ,decompSpendDist = rbindlist(lapply(resultCollectNG, function(x) {rbindlist(lapply(x, function(y) y$decompSpendDist))}))[order(nrmse)]
@@ -1682,7 +1682,7 @@ robyn_run <- function(InputCollect
     if (!all(c(hypParamSamName, "lambda") %in% names(dt_hyper_fixed))) {stop("dt_hyper_fixed is provided with wrong input. please provide the table OutputCollect$resultHypParam from previous runs or pareto_hyperparameters.csv with desired model ID")}
     
     hyper_fixed <- TRUE
-    hyperparameters_fixed <- lapply(dt_hyper_fixed[, hypParamSamName, with = F], unlist)
+    hyperparameters_fixed <- lapply(dt_hyper_fixed[, hypParamSamName, with = FALSE], unlist)
     
     model_output_collect <- list()
     model_output_collect[[1]] <- robyn_mmm(hyperparameters_fixed
@@ -1763,7 +1763,7 @@ robyn_run <- function(InputCollect
         model_output["trial"] <- ngt
         #ng_collect[[ngt]] <- model_output$resultCollect$paretoFront[, ':='(trial=ngt, iters = InputCollect$iterations, ng_optmz = optmz)]
         model_output_collect[[ngt]] <- model_output
-        #model_output_pareto <- robyn_mmm(InputCollect$hyperparameters, out = T)
+        #model_output_pareto <- robyn_mmm(InputCollect$hyperparameters, out = TRUE)
       }
       # ng_collect <- rbindlist(ng_collect)
       # px <- low(ng_collect$nrmse) * low(ng_collect$decomp.rssd)
@@ -1799,7 +1799,7 @@ robyn_run <- function(InputCollect
     resultHypParam[, mape.qt10:= mape <= mape_lift_quantile10 & nrmse <= nrmse_quantile90 & decomp.rssd <= decomprssd_quantile90]
     
     
-    resultHypParamPareto <- resultHypParam[mape.qt10==T]
+    resultHypParamPareto <- resultHypParam[mape.qt10==TRUE]
     px <- low(resultHypParamPareto$nrmse) * low(resultHypParamPareto$decomp.rssd)
     resultHypParamPareto <- psel(resultHypParamPareto, px, top = nrow(resultHypParamPareto))[order(iterNG, iterPar, nrmse)]
     setnames(resultHypParamPareto, ".level", "robynPareto")
@@ -1809,7 +1809,7 @@ robyn_run <- function(InputCollect
     resultHypParam <- merge(resultHypParam,resultHypParamPareto[, .(solID, robynPareto)], all.x=TRUE)
     
   } else {
-    resultHypParam[, ':='(mape.qt10 = T, robynPareto =1, coef0=NA)]
+    resultHypParam[, ':='(mape.qt10 = TRUE, robynPareto =1, coef0=NA)]
   }
   
   xDecompAgg <- xDecompAgg[resultHypParam, robynPareto := i.robynPareto, on = c("iterNG", "iterPar", "trial")]
@@ -1830,8 +1830,7 @@ robyn_run <- function(InputCollect
                                       ,Spend = decompSpendDist[n, mean_spend]
                                       ,dt_hyppar = resultHypParam
                                       ,dt_coef = xDecompAgg
-                                      ,InputCollect = InputCollect
-    )
+                                      ,InputCollect = InputCollect)
   }
   decompSpendDist[, mean_response:=resp_collect]
   decompSpendDist[, ':='(roi_mean = mean_response/mean_spend
@@ -1872,9 +1871,9 @@ robyn_run <- function(InputCollect
     ## plot prophet
     
     if (!is.null(InputCollect$prophet_vars)) {
-      # pProphet <- prophet_plot_components(InputCollect$modelRecurrance, InputCollect$forecastRecurrance, render_plot = T)
+      # pProphet <- prophet_plot_components(InputCollect$modelRecurrance, InputCollect$forecastRecurrance, render_plot = TRUE)
       
-      dt_plotProphet <- InputCollect$dt_mod[, c('ds','dep_var', InputCollect$prophet_vars, InputCollect$factor_vars), with = F]
+      dt_plotProphet <- InputCollect$dt_mod[, c('ds','dep_var', InputCollect$prophet_vars, InputCollect$factor_vars), with = FALSE]
       dt_plotProphet <- melt.data.table(dt_plotProphet, id.vars = 'ds')
       pProphet <- ggplot(dt_plotProphet, aes(x=ds, y=value)) + 
         geom_line(color='steelblue')+ 
@@ -1906,7 +1905,7 @@ robyn_run <- function(InputCollect
     
     ## plot hyperparameter sampling distribution
     
-    resultHypParam.melted <- melt.data.table(resultHypParam[, c(InputCollect$local_name,"robynPareto"), with = F], id.vars = c("robynPareto"))
+    resultHypParam.melted <- melt.data.table(resultHypParam[, c(InputCollect$local_name,"robynPareto"), with = FALSE], id.vars = c("robynPareto"))
     
     pSamp <- ggplot(data = resultHypParam.melted,  aes( x = value, y=variable, color = variable, fill = variable) ) +
       geom_violin(alpha = .5, size = 0) +
@@ -2040,13 +2039,13 @@ robyn_run <- function(InputCollect
       
       resultHypParamLoop <- resultHypParam[solID == uniqueSol[j]]
       
-      hypParam <- unlist(resultHypParamLoop[, InputCollect$local_name, with =F])
-      dt_transformPlot <- dt_mod[, c("ds", InputCollect$all_media), with =F] # independent variables
-      dt_transformSpend <- cbind(dt_transformPlot[,.(ds)], InputCollect$dt_input[, c(InputCollect$paid_media_spends), with =F]) # spends of indep vars
+      hypParam <- unlist(resultHypParamLoop[, InputCollect$local_name, with =FALSE])
+      dt_transformPlot <- dt_mod[, c("ds", InputCollect$all_media), with =FALSE] # independent variables
+      dt_transformSpend <- cbind(dt_transformPlot[,.(ds)], InputCollect$dt_input[, c(InputCollect$paid_media_spends), with =FALSE]) # spends of indep vars
       setnames(dt_transformSpend, names(dt_transformSpend), c("ds", InputCollect$paid_media_vars))
       
       # update non-spend variables
-      dt_transformSpendMod <- dt_transformPlot[InputCollect$rollingWindowStartWhich:InputCollect$rollingWindowEndWhich, c("ds", InputCollect$paid_media_vars), with=F ]
+      dt_transformSpendMod <- dt_transformPlot[InputCollect$rollingWindowStartWhich:InputCollect$rollingWindowEndWhich, c("ds", InputCollect$paid_media_vars), with=FALSE ]
       if (length(InputCollect$exposureVarName)>0) {
         for (expo in InputCollect$exposureVarName) {
           sel_nls <- ifelse(InputCollect$modNLSCollect[channel == expo, rsq_nls>rsq_lm],"nls","lm")
@@ -2138,20 +2137,20 @@ robyn_run <- function(InputCollect
       }
       
       #mediaAdstockFactorPlot <- dt_transformPlot[, lapply(.SD, sum), .SDcols = InputCollect$paid_media_vars]  / dt_transformAdstock[, lapply(.SD, sum), .SDcols = InputCollect$paid_media_vars]
-      #dt_transformSaturationAdstockReverse <- data.table(mapply(function(x, y) {x*y},x= dt_transformAdstock[, InputCollect$paid_media_vars, with=F], y= mediaAdstockFactorPlot))
-      dt_transformSaturationSpendReverse <- copy(dt_transformAdstock[, c("ds", InputCollect$all_media), with=F])
+      #dt_transformSaturationAdstockReverse <- data.table(mapply(function(x, y) {x*y},x= dt_transformAdstock[, InputCollect$paid_media_vars, with=FALSE], y= mediaAdstockFactorPlot))
+      dt_transformSaturationSpendReverse <- copy(dt_transformAdstock[, c("ds", InputCollect$all_media), with=FALSE])
       
       for (i in 1:InputCollect$mediaVarCount) {
         chn <- InputCollect$paid_media_vars[i]
         if (chn %in% InputCollect$paid_media_vars[InputCollect$costSelector]) {
           
           # get Michaelis Menten nls fitting param
-          get_chn <- dt_transformSaturationSpendReverse[, chn, with =F]
+          get_chn <- dt_transformSaturationSpendReverse[, chn, with =FALSE]
           Vmax <- InputCollect$modNLSCollect[channel == chn, Vmax]
           Km <- InputCollect$modNLSCollect[channel == chn, Km]
           
           # reverse exposure to spend
-          dt_transformSaturationSpendReverse[, (chn):= mic_men(x=.SD, Vmax = Vmax, Km = Km, reverse = T), .SDcols = chn] # .SD * Km / (Vmax - .SD) exposure to spend, reverse Michaelis Menthen: x = y*Km/(Vmax-y)
+          dt_transformSaturationSpendReverse[, (chn):= mic_men(x=.SD, Vmax = Vmax, Km = Km, reverse = TRUE), .SDcols = chn] # .SD * Km / (Vmax - .SD) exposure to spend, reverse Michaelis Menthen: x = y*Km/(Vmax-y)
           
         } else if (chn %in% InputCollect$exposureVarName) {
           coef_lm <- InputCollect$modNLSCollect[channel == chn, coef_lm]
@@ -2163,7 +2162,7 @@ robyn_run <- function(InputCollect
       
       dt_transformSaturationSpendReverse <- dt_transformSaturationSpendReverse[InputCollect$rollingWindowStartWhich:InputCollect$rollingWindowEndWhich]
       
-      dt_scurvePlot <- cbind(melt.data.table(dt_transformSaturationDecomp[, c("ds", InputCollect$all_media), with=F], id.vars = "ds", variable.name = "channel",value.name = "response"),
+      dt_scurvePlot <- cbind(melt.data.table(dt_transformSaturationDecomp[, c("ds", InputCollect$all_media), with=FALSE], id.vars = "ds", variable.name = "channel",value.name = "response"),
                              melt.data.table(dt_transformSaturationSpendReverse, id.vars = "ds", value.name = "spend")[, .(spend)])
       dt_scurvePlot <- dt_scurvePlot[spend>=0] # remove outlier introduced by MM nls fitting
       
@@ -2209,7 +2208,7 @@ robyn_run <- function(InputCollect
       p4 <- ggplot(data= dt_scurvePlot, aes(x=spend, y=response, color = channel)) +
         geom_line() +
         geom_point(data = dt_scurvePlotMean, aes(x=mean_spend, y=mean_response, color = channel)) +
-        geom_text(data = dt_scurvePlotMean, aes(x=mean_spend, y=mean_response,  label = round(mean_spend,0)), show.legend = F, hjust = -0.2)+
+        geom_text(data = dt_scurvePlotMean, aes(x=mean_spend, y=mean_response,  label = round(mean_spend,0)), show.legend = FALSE, hjust = -0.2)+
         theme(legend.position = c(0.9, 0.2)) +
         labs(title="Response curve and mean spend by channel"
              ,subtitle = paste0("rsq_train: ", rsq_train_plot, 
@@ -2221,9 +2220,9 @@ robyn_run <- function(InputCollect
       ## plot fitted vs actual
       
       if(!is.null(InputCollect$prophet_vars)) {
-        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "dep_var", InputCollect$prophet_vars, InputCollect$context_vars), with=F], dt_transformSaturation[, InputCollect$all_media, with=F])
+        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "dep_var", InputCollect$prophet_vars, InputCollect$context_vars), with=FALSE], dt_transformSaturation[, InputCollect$all_media, with=FALSE])
       } else {
-        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "dep_var", InputCollect$context_vars), with=F], dt_transformSaturation[, InputCollect$all_media, with=F])
+        dt_transformDecomp <- cbind(dt_modRollWind[, c("ds", "dep_var", InputCollect$context_vars), with=FALSE], dt_transformSaturation[, InputCollect$all_media, with=FALSE])
       }
       col_order <- c("ds", "dep_var", InputCollect$all_ind_vars)
       setcolorder(dt_transformDecomp, neworder = col_order)
@@ -2234,7 +2233,7 @@ robyn_run <- function(InputCollect
       intercept <- xDecompVec$`(Intercept)`
       
       xDecompVec <- data.table(mapply(function(scurved,coefs) { scurved * coefs}, 
-                                      scurved=dt_transformDecomp[, !c("ds", "dep_var"), with=F] , 
+                                      scurved=dt_transformDecomp[, !c("ds", "dep_var"), with=FALSE] , 
                                       coefs = xDecompVec[, !c("solID", "(Intercept)")]))
       xDecompVec[, intercept:= intercept]
       xDecompVec[, ':='(depVarHat=rowSums(xDecompVec), solID = uniqueSol[j])]
@@ -2258,7 +2257,7 @@ robyn_run <- function(InputCollect
       
       p6 <- qplot(x=predicted, y = actual - predicted, data = xDecompVecPlot) +
         geom_hline(yintercept = 0) +
-        geom_smooth(se = T, method = 'loess', formula = 'y ~ x') + 
+        geom_smooth(se = TRUE, method = 'loess', formula = 'y ~ x') + 
         xlab("fitted") + ylab("resid") + ggtitle("fitted vs. residual")
       
       
@@ -2353,7 +2352,7 @@ robyn_response <- function(robyn_object = NULL
   
   ## get input
   if (!is.null(robyn_object)) {
-
+    
     load(robyn_object)
     objectName <-  substr(robyn_object, start = max(gregexpr("/|\\\\", robyn_object)[[1]])+1, stop = max(gregexpr("RData", robyn_object)[[1]])-2)
     objectPath <- substr(robyn_object, start = 1, stop = max(gregexpr("/|\\\\", robyn_object)[[1]]))
@@ -2421,7 +2420,7 @@ robyn_response <- function(robyn_object = NULL
     if (nls_select) {
       Vmax <- spendExpoMod[channel == paid_media_var, Vmax]
       Km <- spendExpoMod[channel == paid_media_var, Km]
-      Spend <- mic_men(x=Spend, Vmax = Vmax, Km = Km, reverse = F) 
+      Spend <- mic_men(x=Spend, Vmax = Vmax, Km = Km, reverse = FALSE) 
     } else {
       coef_lm <- spendExpoMod[channel == paid_media_var, coef_lm]
       Spend <- Spend * coef_lm
@@ -2478,7 +2477,7 @@ robyn_save <- function(robyn_object
   #initModPathFull <- paste0(robyn_object, "/")
   if (file.exists(robyn_object)) {
     answer <- askYesNo(paste0(robyn_object, " already exists. Are you certain to overwrite it?")) 
-    if(answer==F | is.na(answer)) {
+    if(answer==FALSE | is.na(answer)) {
       stop("stopped")
     }
   }
@@ -2515,7 +2514,7 @@ robyn_refresh <- function(robyn_object
                           
 ) {
   
-  refreshControl <- T
+  refreshControl <- TRUE
   while (refreshControl) {
     
     ## load inital model
@@ -2548,10 +2547,10 @@ robyn_refresh <- function(robyn_object
       message(paste0("\n###### refresh model nr.",refreshCounter-1," loaded ... ######"))
       
       ## model selection from previous build
-      listOutputPrev$resultHypParam <- listOutputPrev$resultHypParam[bestModRF==T]
-      listOutputPrev$xDecompAgg <- listOutputPrev$xDecompAgg[bestModRF==T]
-      listOutputPrev$mediaVecCollect <- listOutputPrev$mediaVecCollect[bestModRF==T]
-      listOutputPrev$xDecompVecCollect <- listOutputPrev$xDecompVecCollect[bestModRF==T]
+      listOutputPrev$resultHypParam <- listOutputPrev$resultHypParam[bestModRF==TRUE]
+      listOutputPrev$xDecompAgg <- listOutputPrev$xDecompAgg[bestModRF==TRUE]
+      listOutputPrev$mediaVecCollect <- listOutputPrev$mediaVecCollect[bestModRF==TRUE]
+      listOutputPrev$xDecompVecCollect <- listOutputPrev$xDecompVecCollect[bestModRF==TRUE]
     }
     
     InputCollectRF$refreshCounter <- refreshCounter
@@ -2585,7 +2584,7 @@ robyn_refresh <- function(robyn_object
     if (refresh_mode == "manual") {
       refreshLooper <- 1
       message("###### refreshing model nr.",refreshCounter, " in ", refresh_mode, " mode ... ######")
-      refreshControl <- F
+      refreshControl <- FALSE
     } else {
       refreshLooper <- floor(as.numeric(difftime(max(totalDates), refreshEnd, units = "days")) / InputCollectRF$dayInterval / refresh_steps)
       message("###### refreshing model nr.",refreshCounter, " in ",refresh_mode," mode. ",refreshLooper," more to go ... ######")
@@ -2647,24 +2646,24 @@ robyn_refresh <- function(robyn_object
       listOutputPrev$xDecompVecCollect[, ':='(bestModRF=TRUE, refreshStatus=refreshCounter-1)]
       
       
-      resultHypParamReport <- rbind(listOutputPrev$resultHypParam[bestModRF==T]
-                                    ,OutputCollectRF$resultHypParam[bestModRF==T][, refreshStatus:=refreshCounter])
-      xDecompAggReport <- rbind(listOutputPrev$xDecompAgg[bestModRF==T]
-                                ,OutputCollectRF$xDecompAgg[bestModRF==T][, refreshStatus:=refreshCounter])
-      mediaVecReport <- rbind(listOutputPrev$mediaVecCollect[bestModRF==T & ds>=(refreshStart- InputCollectRF$dayInterval * refresh_steps) & ds <= (refreshEnd- InputCollectRF$dayInterval * refresh_steps)]
-                              ,OutputCollectRF$mediaVecCollect[bestModRF==T & ds>=InputCollectRF$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+      resultHypParamReport <- rbind(listOutputPrev$resultHypParam[bestModRF==TRUE]
+                                    ,OutputCollectRF$resultHypParam[bestModRF==TRUE][, refreshStatus:=refreshCounter])
+      xDecompAggReport <- rbind(listOutputPrev$xDecompAgg[bestModRF==TRUE]
+                                ,OutputCollectRF$xDecompAgg[bestModRF==TRUE][, refreshStatus:=refreshCounter])
+      mediaVecReport <- rbind(listOutputPrev$mediaVecCollect[bestModRF==TRUE & ds>=(refreshStart- InputCollectRF$dayInterval * refresh_steps) & ds <= (refreshEnd- InputCollectRF$dayInterval * refresh_steps)]
+                              ,OutputCollectRF$mediaVecCollect[bestModRF==TRUE & ds>=InputCollectRF$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
       mediaVecReport <- mediaVecReport[order(type, ds, refreshStatus)]
-      xDecompVecReport <- rbind(listOutputPrev$xDecompVecCollect[bestModRF==T]
-                                ,OutputCollectRF$xDecompVecCollect[bestModRF==T & ds>=InputCollectRF$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+      xDecompVecReport <- rbind(listOutputPrev$xDecompVecCollect[bestModRF==TRUE]
+                                ,OutputCollectRF$xDecompVecCollect[bestModRF==TRUE & ds>=InputCollectRF$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
     } else {
       
-      resultHypParamReport <- rbind(listReportPrev$resultHypParamReport, OutputCollectRF$resultHypParam[bestModRF==T][, refreshStatus:=refreshCounter])
-      xDecompAggReport <- rbind(listReportPrev$xDecompAggReport, OutputCollectRF$xDecompAgg[bestModRF==T][, refreshStatus:=refreshCounter])
+      resultHypParamReport <- rbind(listReportPrev$resultHypParamReport, OutputCollectRF$resultHypParam[bestModRF==TRUE][, refreshStatus:=refreshCounter])
+      xDecompAggReport <- rbind(listReportPrev$xDecompAggReport, OutputCollectRF$xDecompAgg[bestModRF==TRUE][, refreshStatus:=refreshCounter])
       mediaVecReport <- rbind(listReportPrev$mediaVecReport
-                              , OutputCollectRF$mediaVecCollect[bestModRF==T & ds>=InputCollectRF$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+                              , OutputCollectRF$mediaVecCollect[bestModRF==TRUE & ds>=InputCollectRF$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
       mediaVecReport <- mediaVecReport[order(type, ds, refreshStatus)]
       xDecompVecReport <- rbind(listReportPrev$xDecompVecReport
-                                ,OutputCollectRF$xDecompVecCollect[bestModRF==T & ds>=InputCollectRF$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
+                                ,OutputCollectRF$xDecompVecCollect[bestModRF==TRUE & ds>=InputCollectRF$refreshAddedStart & ds<=refreshEnd][, refreshStatus:=refreshCounter])
     }
     
     fwrite(resultHypParamReport, paste0(OutputCollectRF$plot_folder, "report_hyperparameters.csv"))
@@ -2759,7 +2758,7 @@ robyn_refresh <- function(robyn_object
     save(Robyn, file = robyn_object)
     
     if(refreshLooper==0) {
-      refreshControl <- F
+      refreshControl <- FALSE
       message("reached maximum available date. no further refresh possible")}
   }
   
