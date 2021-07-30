@@ -20,9 +20,11 @@
 # DONE: adjusted rsq
 # DONE: adapt allocator for robyn_object 
 # DONE: adapt robyn_mmm param ...
-# add ROI report plot
-# add survey
+# DONE: add ROI report plot
+# DONE: adapt hyperparameter defining workflow
+# check convergence
 # clean up comments & prints
+# add survey
 
 # correlation matrix plot,  channel detail plot for selecte model (mROI)
 # add pareto clustering
@@ -39,18 +41,15 @@
 ####################                    2021-03-03                     ######################
 #############################################################################################
 
-################################################################
-#### set locale for non English R
-# Sys.setlocale("LC_TIME", "English") # Sys.setlocale("LC_ALL", 'en_US.UTF-8')
-
-################################################################
-#### load libraries
 ## R version 4.0.3 (2020-10-10) ## Update to R version 4.0.3 to avoid potential errors
 ## RStudio version 1.2.1335
 rm(list=ls()); gc()
 
 ################################################################
-#### setup environement
+#### Step 0: setup environement
+
+## set locale for non English R
+# Sys.setlocale("LC_TIME", "English") # Sys.setlocale("LC_ALL", 'en_US.UTF-8')
 
 ## load scripts
 script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
@@ -76,11 +75,9 @@ use_condaenv("r-reticulate")
 ## in case nevergrad still can't be imported after installation, please locate your python file and run this line
 # use_python("/Users/gufengzhou/Library/r-miniconda/envs/r-reticulate/bin/python3.9") 
 
-################################################################################
-####################    Building the first initial model  ######################
 
 ################################################################
-#### load data
+#### Step 1: load data
 
 ## load input data & holiday. 
 ## Please note the simulated dataset includes new variables "newsletter" and "events" now to demonstrate usage of factor_vars and organic_vars
@@ -91,10 +88,69 @@ dt_holidays <- fread(paste0(script_path, "holidays.csv"))
 robyn_object <- "/Users/gufengzhou/Documents/robyn_dev_output/Robyn.RData"
 registerDoSEQ(); detectCores()
 
-################################################################
-#### set model input & feature engineering
 
-#### Guidance to set hypereparameter bounds ####
+################################################################
+#### Step 2: define variables & model parameters
+
+InputCollect <- robyn_inputs(dt_input = dt_input
+                             ,dt_holidays = dt_holidays
+                             
+                             
+                             #######################
+                             #### set variables ####
+                             
+                             ,date_var = "DATE" # date format must be "2020-01-01"
+                             ,dep_var = "revenue" # there should be only one dependent variable
+                             ,dep_var_type = "revenue" # "revenue" or "conversion"
+                             
+                             ,prophet_vars = c("trend", "season", "holiday") # "trend","season", "weekday", "holiday" are provided and case-sensitive. Recommended to at least keep Trend & Holidays
+                             ,prophet_signs = c("default","default", "default") # c("default", "positive", and "negative"). Recommend as default. Must be same length as prophet_vars
+                             ,prophet_country = "DE" # only one country allowed once. Including national holidays for 59 countries, whose list can be found on our githut guide
+                             
+                             ,context_vars = c("competitor_sales_B", "events") # typically competitors, price & promotion, temperature,  unemployment rate etc
+                             ,context_signs = c("default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
+                             
+                             ,paid_media_vars = c("tv_S","ooh_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P") # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
+                             ,paid_media_signs = c("positive", "positive","positive", "positive", "positive") # c("default", "positive", and "negative"). must have same length as paid_media_vars. control the signs of coefficients for media variables
+                             ,paid_media_spends = c("tv_S","ooh_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as paid_media_vars
+                             
+                             ,organic_vars = c("newsletter")
+                             ,organic_signs = c("positive") # must have same length as organic_vars
+                             
+                             ,factor_vars = c("events") # specify which variables in context_vars and organic_vars are factorial
+                             
+                             
+                             ##############################
+                             #### set model parameters ####
+                             
+                             ## set cores for parallel computing
+                             ,cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
+                             
+                             ## set rolling window start (only works for whole dataset for now)
+                             ,window_start = "2016-11-23"
+                             ,window_end = "2018-08-22"
+                             
+                             ## set model core features
+                             ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
+                             ,iterations = 150  # number of allowed iterations per trial. 500 is recommended
+                             
+                             ,nevergrad_algo = "DiscreteOnePlusOne" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
+                             ,trials = 1 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
+                             ## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
+                             
+                             #,hyperparameters = hyperparameters
+                             
+                             # ,calibration_input = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
+                             #                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
+                             #                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
+                             #                        liftAbs = c(400000, 300000, 200000))
+)
+
+
+################################################################
+#### Step 3: define and add hyperparameters
+
+## Guide to setup hyperparameters 
 
 ## 1. get correct hyperparameter names:
 # all variables in paid_media_vars or organic_vars require hyperprameter and will be transformed by adstock & saturation
@@ -109,11 +165,13 @@ registerDoSEQ(); detectCores()
 # alpha: In s-curve transformation with hill function, alpha controls the shape between exponential and s-shape. Recommended c(0.5, 3). The larger the alpha, the more S-shape. The smaller, the more C-shape
 # gamma: In s-curve transformation with hill function, gamma controls the inflexion point. Recommended bounce c(0.3, 1). The larger the gamma, the later the inflection point in the response curve
 
+# helper plots: set plot to TRUE for transformation examples
+plot_adstock(FALSE) # adstock transformation example plot, helping you understand geometric/theta and weibull/shape/scale transformation
+plot_saturation(FALSE) # s-curve transformation example plot, helping you understand hill/alpha/gamma transformatio
+
 ## 3. set each hyperparameter bounds. They either contains two values e.g. c(0, 0.5), or only one value (in which case you've "fixed" that hyperparameter)
-set_adstock <- "geometric"
-paid_media_vars <- c("tv_S","ooh_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P") 
-organic_vars <- c("newsletter")
-hyper_names(adstock = set_adstock, all_media = c(paid_media_vars, organic_vars))
+
+hyper_names(adstock = InputCollect$adstock, all_media = InputCollect$all_media)
 
 hyperparameters <- list(
   facebook_I_alphas = c(0.5, 3) # example bounds for alpha
@@ -153,76 +211,28 @@ hyperparameters <- list(
   #,newsletter_scales = c(0, 0.1)
 )
 
-## run robyn_inputs function to specify model input
-InputCollect <- robyn_inputs(dt_input = dt_input
-                             ,dt_holidays = dt_holidays
-                             ,date_var = "DATE" # date format must be "2020-01-01"
-                             ,dep_var = "revenue" # there should be only one dependent variable
-                             ,dep_var_type = "revenue" # "revenue" or "conversion"
-                             
-                             ,prophet_vars = c("trend", "season", "holiday") # "trend","season", "weekday", "holiday" are provided and case-sensitive. Recommended to at least keep Trend & Holidays
-                             ,prophet_signs = c("default","default", "default") # c("default", "positive", and "negative"). Recommend as default. Must be same length as prophet_vars
-                             ,prophet_country = "DE" # only one country allowed once. Including national holidays for 59 countries, whose list can be found on our githut guide
-                             
-                             ,context_vars = c("competitor_sales_B", "events") # typically competitors, price & promotion, temperature,  unemployment rate etc
-                             ,context_signs = c("default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
-                             
-                             ,paid_media_vars = paid_media_vars# c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
-                             ,paid_media_signs = c("positive", "positive","positive", "positive", "positive") # c("default", "positive", and "negative"). must have same length as paid_media_vars. control the signs of coefficients for media variables
-                             ,paid_media_spends = c("tv_S","ooh_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as paid_media_vars
-                             
-                             ,organic_vars = organic_vars
-                             ,organic_signs = c("positive") # must have same length as organic_vars
-                             
-                             ,factor_vars = c("events") # specify which variables in context_vars and organic_vars are factorial
-                             
-                             ################################################################
-                             #### set global model parameters
-                             
-                             ## set cores for parallel computing
-                             ,cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
-                             
-                             ## set rolling window start (only works for whole dataset for now)
-                             ,window_start = "2016-11-23"
-                             ,window_end = "2018-08-22"
-                             
-                             ## set model core features
-                             ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
-                             ,iterations = 150  # number of allowed iterations per trial. 500 is recommended
-                             
-                             ,nevergrad_algo = "DiscreteOnePlusOne" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
-                             ,trials = 1 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
-                             ## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
-                             
-                             ,hyperparameters = hyperparameters
-                             
-                             # ,calibration_input = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
-                             #                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
-                             #                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
-                             #                        liftAbs = c(400000, 300000, 200000))
-                             
-)
+## Add hyperparameters intu robyn_inputs()
 
+InputCollect <- robyn_inputs(InputCollect = InputCollect
+                             , hyperparameters = hyperparameters)
 
-## helper plots: set plot to TRUE for transformation examples
-plot_adstock(F) # adstock transformation example plot, helping you understand geometric/theta and weibull/shape/scale transformation
-plot_saturation(F) # s-curve transformation example plot, helping you understand hill/alpha/gamma transformatio
 
 ################################################################
-#### Run the first model
+#### Step 4: Build initial model
 
 OutputCollect <- robyn_run(InputCollect = InputCollect
                            , plot_folder = robyn_object
-                           , pareto_fronts = 1
-                           , plot_pareto = FALSE)
+                           , pareto_fronts = 3
+                           , plot_pareto = TRUE)
 
 
 ################################################################
-#### Select and save the model
+#### Step 5: Select and save the initial model
 
-## compare all model onepagers and select one that mostly represents your business reality
+## compare all model onepagers in the plot folder and select one that mostly represents your business reality
+
 OutputCollect$allSolutions
-select_model <- "1_25_1"
+select_model <- "1_12_3"
 robyn_save(robyn_object = robyn_object
            , select_model = select_model
            , InputCollect = InputCollect
@@ -230,10 +240,10 @@ robyn_save(robyn_object = robyn_object
 
 
 ################################################################
-#### Get budget allocation based on the selected model above
+#### Step 6: Get budget allocation based on the selected model above
 
 ## Budget allocator result requires further validation. Please use this result with caution.
-## Please don't interpret budget allocation result if there's no satisfying MMM result
+## Don't interpret budget allocation result if selected model result doesn't meet business expectation
 
 OutputCollect$xDecompAgg[solID == select_model & !is.na(mean_spend), .(rn, coef,mean_spend, mean_response, roi_mean, total_spend, total_response=xDecompAgg, roi_total, solID)] #check media summary for selected model
 
@@ -259,14 +269,10 @@ AllocatorCollect <- robyn_allocator(InputCollect = InputCollect
 # round(optimal_response_allocator) == round(optimal_response); optimal_response_allocator; optimal_response
 
 
-#############################################################################################
-####################    Refresh the initial model above with new data  ######################
-
 ################################################################
-#### Model refresh - Alpha
+#### Step 7: Model refresh based on selected model and saved Robyn.RData object - Alpha
 
 ## NOTE: must run robyn_save to select and save an initial model first, before refreshing below
-# source(paste(script_path, "fb_robyn.func.R", sep=""))
 
 Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
                        , dt_input = dt_input
@@ -277,7 +283,19 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
                        , refresh_trials = 1 # trial for refresh
 )
 
-## run
+######## Please check plot output folders. The following 4 reporting CSVs are new and accummulated result with all previous refreshes ...
+######## ... that will be the data for reporting plots 
+######## report_aggregated.csv, report_alldecomp_matrix.csv, report_hyperparameters.csv, report_media_transform_matrix.csv
+
+# QA
+# load(robyn_object)
+# length(Robyn);names(Robyn)
+# Robyn$listRefresh1 <- NULL
+# save(Robyn, file = robyn_object)
+
+################################################################
+#### Step 8: Get budget allocation recommendation based on selected refresh runs
+
 AllocatorCollect <- robyn_allocator(robyn_object = robyn_object
                                     # , select_run
                                     , optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
@@ -288,45 +306,34 @@ AllocatorCollect <- robyn_allocator(robyn_object = robyn_object
                                     , channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
 )
 
-######## Please check plot output folders. The following 4 reporting CSVs are new and accummulated result with all previous refreshes ...
-######## ... that will be the data for reporting plots 
-######## report_aggregated.csv, report_alldecomp_matrix.csv, report_hyperparameters.csv, report_media_transform_matrix.csv
-
-
-# QA
-# load(robyn_object)
-# length(Robyn);names(Robyn)
-# Robyn$listRefresh1 <- NULL
-# save(Robyn, file = robyn_object)
 
 ################################################################
-#### get marginal returns
+#### Step 9: get marginal returns
 
-## example of how to get marginal ROI for 80k spend for search channel from the second refresh model
-# Robyn$listRefresh1$ReportCollect$xDecompAggReport[, .(refreshStatus, rn, mean_spend, mean_response, roi_mean, roi_total)]
+## Example of how to get marginal ROI of next 1000$ from the 80k spend level for search channel
 
 # get response for 80k
-Spend <- 50000
-Response <- robyn_response(robyn_object = robyn_object
-                           #, select_run = 1 # 2 means the sedond refresh model. 0 means the initial model
-                           , paid_media_var = "search_clicks_P"
-                           , Spend = Spend)
-Response/Spend # ROI for search 80k
-
-# get response for 80k+1
-Spend1 <- Spend+1000
+Spend1 <- 80000
 Response1 <- robyn_response(robyn_object = robyn_object
-                            #, select_run = 1
+                            #, select_run = 1 # 2 means the sedond refresh model. 0 means the initial model
                             , paid_media_var = "search_clicks_P"
                             , Spend = Spend1)
-Response1/Spend1 # ROI for search 80k+1
+Response1/Spend1 # ROI for search 80k
 
-# marginal ROI of 80k search
-(Response1-Response)/(Spend1-Spend)
+# get response for 81k
+Spend2 <- Spend1+1000
+Response2 <- robyn_response(robyn_object = robyn_object
+                            #, select_run = 1
+                            , paid_media_var = "search_clicks_P"
+                            , Spend = Spend2)
+Response2/Spend2 # ROI for search 81k
+
+# marginal ROI of next 1000$ from 80k spend level for search
+(Response2-Response1)/(Spend2-Spend1)
 
 
-#####################################################################
-####################    Get old model results  ######################
+################################################################
+#### Optinal: get old model results
 
 # get old hyperparameters and select model
 dt_hyper_fixed <- fread("/Users/gufengzhou/Documents/robyn_dev_output/2021-07-29 00.56 init/pareto_hyperparameters.csv")
@@ -336,6 +343,7 @@ dt_hyper_fixed <- dt_hyper_fixed[solID == select_model]
 OutputCollectFixed <- robyn_run(InputCollect = InputCollect # InputCollect must be provided by robyn_inputs with same dataset and parameters as before
                                 , plot_folder = robyn_object 
                                 , dt_hyper_fixed = dt_hyper_fixed) 
+
 
 # save Robyn object for further refresh
 robyn_save(robyn_object = robyn_object
