@@ -1063,11 +1063,10 @@ model_refit <- function(x_train, y_train, lambda, lower.limits, upper.limits) {
 ################################################################
 #### Define major mmm function
 
-robyn_mmm <- function(...
+robyn_mmm <- function(hyper_collect
                       , InputCollect
                       , iterations = InputCollect$iterations
                       , lambda.n = 100
-                      #, hyper_fixed = FALSE
                       , lambda_fixed = NULL
                       , refresh = FALSE
 ) {
@@ -1075,15 +1074,15 @@ robyn_mmm <- function(...
   ################################################
   #### Collect hyperparameters
   
-  hypParamSamName <- hyper_names(adstock = InputCollect$adstock, all_media =InputCollect$all_media)
+  hypParamSamName <- hyper_names(adstock = InputCollect$adstock, all_media = InputCollect$all_media)
   hyper_fixed <- FALSE
   
-  hyperCollect <- unlist(list(...), recursive = FALSE) # hyperCollect <- InputCollect$hyperparameters; hyperCollect <- hyperparameters_fixed
+  # hyper_collect <- unlist(list(...), recursive = FALSE) # hyper_collect <- InputCollect$hyperparameters; hyper_collect <- hyperparameters_fixed
   
   # sort hyperparameter list by name
   hyper_bound_list <- list()
   for (i in 1:length(hypParamSamName)) {
-    hyper_bound_list[i] <- hyperCollect[hypParamSamName[i]]
+    hyper_bound_list[i] <- hyper_collect[hypParamSamName[i]]
     names(hyper_bound_list)[i] <- hypParamSamName[i]
   }
   
@@ -1685,7 +1684,7 @@ robyn_run <- function(InputCollect
     hyperparameters_fixed <- lapply(dt_hyper_fixed[, hypParamSamName, with = FALSE], unlist)
     
     model_output_collect <- list()
-    model_output_collect[[1]] <- robyn_mmm(hyperparameters_fixed
+    model_output_collect[[1]] <- robyn_mmm(hyper_collect = hyperparameters_fixed
                                            ,InputCollect = InputCollect
                                            #,iterations = iterations
                                            #,cores = cores
@@ -1743,7 +1742,7 @@ robyn_run <- function(InputCollect
           
         }
         # rm(model_output)
-        model_output <- robyn_mmm(InputCollect$hyperparameters
+        model_output <- robyn_mmm(hyper_collect = InputCollect$hyperparameters
                                   ,InputCollect = InputCollect
                                   ,refresh = refresh
                                   #,iterations = iterations
@@ -2623,7 +2622,11 @@ robyn_refresh <- function(robyn_object
     
     ## refresh model with adjusted decomp.rssd
     
-    OutputCollectRF <- robyn_run(InputCollect = InputCollectRF, plot_folder = objectPath, pareto_fronts =1, refresh = TRUE, plot_pareto = plot_pareto)
+    OutputCollectRF <- robyn_run(InputCollect = InputCollectRF
+                                 , plot_folder = objectPath
+                                 , pareto_fronts = 1
+                                 , refresh = TRUE
+                                 , plot_pareto = plot_pareto)
     
     ## select winner model for current refresh
     # selectID <- OutputCollectRF$resultHypParam[which.min(decomp.rssd), solID] # min decomp.rssd selection
@@ -2713,9 +2716,9 @@ robyn_refresh <- function(robyn_object
     
     ## stacked bar plot
     
-    xDecompAggReportPlotBase <- xDecompAggReport[rn %in% c(InputCollectRF$prophet_vars,"(Intercept)"), .(rn, perc=ifelse(refreshStatus==0, xDecompPerc, xDecompPercRF), refreshStatus)]
+    xDecompAggReportPlotBase <- xDecompAggReport[rn %in% c(InputCollectRF$prophet_vars,"(Intercept)"), .(rn, perc = ifelse(refreshStatus==0, xDecompPerc, xDecompPercRF), refreshStatus)]
     xDecompAggReportPlotBase <- xDecompAggReportPlotBase[, .(variable = "baseline", percentage = sum(perc)), by = refreshStatus]
-    xDecompAggReportPlot <- xDecompAggReport[!(rn %in% c(InputCollectRF$prophet_vars,"(Intercept)")), .(refreshStatus, variable=rn, percentage=xDecompMeanNon0PercRF )]
+    xDecompAggReportPlot <- xDecompAggReport[!(rn %in% c(InputCollectRF$prophet_vars,"(Intercept)")), .(refreshStatus, variable=rn, percentage = ifelse(refreshStatus==0, xDecompPerc, xDecompPercRF) )]
     xDecompAggReportPlot <- rbind(xDecompAggReportPlot, xDecompAggReportPlotBase)[order(refreshStatus, -variable)]
     xDecompAggReportPlot[, refreshStatus:=ifelse(refreshStatus==0, "init.mod", paste0("refresh",refreshStatus))]
     
