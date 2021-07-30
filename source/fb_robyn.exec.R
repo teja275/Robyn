@@ -222,7 +222,7 @@ OutputCollect <- robyn_run(InputCollect = InputCollect
 
 ## compare all model onepagers and select one that mostly represents your business reality
 OutputCollect$allSolutions
-select_model <- "1_24_5"
+select_model <- "1_25_1"
 robyn_save(robyn_object = robyn_object
            , select_model = select_model
            , InputCollect = InputCollect
@@ -272,7 +272,7 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
                        , dt_input = dt_input
                        , dt_holidays = dt_holidays
                        , refresh_steps = 13 # refresh_steps = 4 means refresh model's rolling window will move forward 4 weeks 
-                       , refresh_mode = "manual" # "auto" means the refresh function will move forward until no more data available
+                       , refresh_mode = "auto" # "auto" means the refresh function will move forward until no more data available
                        , refresh_iters = 150 # iteration for refresh
                        , refresh_trials = 1 # trial for refresh
 )

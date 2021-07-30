@@ -1976,6 +1976,7 @@ robyn_run <- function(InputCollect
     for (j in 1:length(uniqueSol)) {
       
       cnt <- cnt+1
+      
       ## plot spend x effect share comparison
       plotMediaShareLoop <- plotMediaShare[solID == uniqueSol[j]]
       rsq_train_plot <- plotMediaShareLoop[, round(unique(rsq_train),4)]
@@ -2717,21 +2718,32 @@ robyn_refresh <- function(robyn_object
     ## stacked bar plot
     
     xDecompAggReportPlotBase <- xDecompAggReport[rn %in% c(InputCollectRF$prophet_vars,"(Intercept)"), .(rn, perc = ifelse(refreshStatus==0, xDecompPerc, xDecompPercRF), refreshStatus)]
-    xDecompAggReportPlotBase <- xDecompAggReportPlotBase[, .(variable = "baseline", percentage = sum(perc)), by = refreshStatus]
-    xDecompAggReportPlot <- xDecompAggReport[!(rn %in% c(InputCollectRF$prophet_vars,"(Intercept)")), .(refreshStatus, variable=rn, percentage = ifelse(refreshStatus==0, xDecompPerc, xDecompPercRF) )]
+    xDecompAggReportPlotBase <- xDecompAggReportPlotBase[, .(variable = "baseline", percentage = sum(perc)), by = refreshStatus][, roi_total := NA]
+    xDecompAggReportPlot <- xDecompAggReport[!(rn %in% c(InputCollectRF$prophet_vars,"(Intercept)")), .(refreshStatus, variable=rn, percentage = ifelse(refreshStatus==0, xDecompPerc, xDecompPercRF), roi_total )]
     xDecompAggReportPlot <- rbind(xDecompAggReportPlot, xDecompAggReportPlotBase)[order(refreshStatus, -variable)]
     xDecompAggReportPlot[, refreshStatus:=ifelse(refreshStatus==0, "init.mod", paste0("refresh",refreshStatus))]
-    
-    pBarRF <- ggplot(data=xDecompAggReportPlot, mapping=aes(y= percentage,x=variable, fill=variable)) +
+    ySecScale <- max(na.omit(xDecompAggReportPlot$roi_total))/max(xDecompAggReportPlot$percentage)*0.75
+    ymax <- max(c(na.omit(xDecompAggReportPlot$roi_total)/ySecScale, xDecompAggReportPlot$percentage))*1.1
+
+    pBarRF <- ggplot(data=xDecompAggReportPlot, mapping=aes(x=variable, y= percentage, fill=variable)) +
       geom_bar(alpha=0.8, position="dodge", stat="identity") +
-      facet_wrap(~refreshStatus,scales = "free_x") +
-      scale_y_continuous(breaks = seq(0, 1, 0.2), limits = c(0,1)) +
-      coord_flip() +
+      facet_wrap(~refreshStatus,scales = "free") +
       scale_fill_brewer(palette = 'BrBG') +
       geom_text(aes(label = paste0(round(percentage*100,1),"%")), size = 3 
                 ,position=position_dodge(width=0.9), hjust=-0.25) +
-      labs(title="Model refresh decomposition"
-           ,subtitle = "baseline includes intercept and all prophet variables")
+      geom_point(aes(x = variable, y = roi_total/ySecScale, color = variable)
+                 , size=4, shape = 17, na.rm=TRUE
+                 , data= xDecompAggReportPlot ) +
+      geom_text(aes(label = round(roi_total,2), x = variable, y = roi_total/ySecScale)
+                , size = 3, na.rm=TRUE, hjust=-0.4, fontface = "bold"
+                , position=position_dodge(width=0.9)
+                , data= xDecompAggReportPlot) +
+      scale_color_brewer(palette = 'BrBG') +
+      scale_y_continuous(sec.axis = sec_axis(~.* ySecScale), breaks = seq(0, ymax, 0.2), limits = c(0,ymax), name = "roi_total") +
+      coord_flip() +
+      theme(legend.position = "none", axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+      labs(title="Model refresh: Decomposition & paid media ROI"
+           ,subtitle = paste0("baseline includes intercept and all prophet vars: ", paste(InputCollectRF$prophet_vars, collapse = ", ")))
     
     print(pBarRF)
     
