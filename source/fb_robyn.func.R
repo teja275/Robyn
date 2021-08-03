@@ -1244,7 +1244,7 @@ robyn_mmm <- function(hyper_collect
   
   iterNG <-  ifelse(hyper_fixed == FALSE, ceiling(iterations/cores), 1)
   
-  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_list_updated),"hyperparameters,",lambda.n,"-fold ridge x-validation using", cores,"cores...\n")
+  # cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_list_updated),"hyperparameters,",lambda.n,"-fold ridge x-validation using", cores,"cores...\n")
   
   ## start Nevergrad optimiser
   
@@ -1265,7 +1265,7 @@ robyn_mmm <- function(hyper_collect
   
   resultCollectNG <- list()
   cnt <- 0
-  cat('\n',"Working with: ", optimizer_name,'\n')
+  cat('\n',"Nevergrad algorithm: ", optimizer_name,'\n')
   if(hyper_fixed==FALSE) {pb <- txtProgressBar(max = iterTotal, style = 3)}
   assign("InputCollect", InputCollect, envir = .GlobalEnv) # adding this to enable InputCollect reading during parallel
   #opts <- list(progress = function(n) setTxtProgressBar(pb, n))
@@ -1757,25 +1757,6 @@ robyn_run <- function(InputCollect
     model_output_collect[[1]]$resultCollect$xDecompVec[dt_IDs, on =.(iterPar), "solID" := .(i.solID)]
     model_output_collect[[1]]$resultCollect$decompSpendDist[dt_IDs, on =.(iterPar), "solID" := .(i.solID)]
     
-    # cat("\n######################\nHyperparameters are all fixed\n######################\n")
-    # print(model_output_collect[[1]]$resultCollect$xDecompAgg)
-    
-    # } else if (hyper_fixed) {
-    #   
-    #   ## Run robyn_mmm on set_trials if hyperparameters are all fixed
-    #   model_output_collect <- list()
-    #   model_output_collect[[1]] <- robyn_mmm(InputCollect$hyperparameters
-    #                                      ,InputCollect = InputCollect
-    #                                      ,iterations = 1
-    #                                      #,cores = 1
-    #                                      #,optimizer_name = optimizer_name
-    #                                      ,refresh = refresh)
-    #   model_output_collect[[1]]$trial <- 1
-    #   
-    #   cat("\n######################\nHyperparameters are all fixed\n######################\n")
-    #   print(model_output_collect[[1]]$resultCollect$xDecompAgg)
-    
-    
   } else {
     
     ## Run robyn_mmm on set_trials if hyperparameters are not all fixed
@@ -1783,17 +1764,17 @@ robyn_run <- function(InputCollect
     t0 <- Sys.time()
     
     # ng_collect <- list()
+    cat("\nUsing",InputCollect$adstock, "adstocking with", length(InputCollect$hyperparameters),"hyperparameters & 100-fold ridge x-validation on", InputCollect$cores,"cores...\n")
     model_output_collect <- list()
     
     for (ngt in 1:InputCollect$trials) { 
       
-      if (nrow(InputCollect$calibration_input)==0) {
-        cat("\nRunning trial nr.", ngt,"out of",InputCollect$trials,"...\n")
-      } else {
-        cat("\nRunning trial nr.", ngt,"out of",InputCollect$trials,"with calibration...\n")
-        
-      }
-      
+      # if (nrow(InputCollect$calibration_input)==0) {
+      #   cat("\nRunning trial nr.", ngt,"out of",InputCollect$trials,"...\n")
+      # } else {
+      cat("\nRunning trial nr.", ngt,"out of",InputCollect$trials,"with",InputCollect$iterations, "iterations per trial", ifelse(nrow(InputCollect$calibration_input)==0, "...\n","with calibration...\n"))
+      #}
+
       model_output <- robyn_mmm(hyper_collect = InputCollect$hyperparameters
                                 ,InputCollect = InputCollect
                                 ,refresh = refresh)
