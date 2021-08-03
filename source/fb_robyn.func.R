@@ -10,7 +10,7 @@
 
 load_libs <- function() {
   
-  libsNeeded <- c("data.table","stringr","lubridate","foreach","glmnet","car","StanHeaders","prophet","rstan","ggplot2","gridExtra","grid","ggpubr","see","PerformanceAnalytics","nloptr","minpack.lm","rPref","reticulate","rstudioapi","corrplot","doFuture", "doRNG","doParallel"
+  libsNeeded <- c("data.table","stringr","lubridate","foreach","glmnet","car","StanHeaders","prophet","rstan","ggplot2","gridExtra","grid","ggpubr","see","PerformanceAnalytics","nloptr","minpack.lm","rPref","reticulate","rstudioapi","corrplot","doFuture", "doRNG"
   )
   cat(paste0("Loading required libraries: ", paste(libsNeeded, collapse = ", "), "\n"))
   libsInstalled <- rownames(installed.packages())
@@ -49,7 +49,7 @@ robyn_inputs <- function(dt_input
                          #### set global model parameters
                          
                          ## set cores for parallel computing
-                         ,cores = 1 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
+                         ,cores = 1 # I am using 6 cores from 8 on my local machine. Use availableCores() to find out cores
                          
                          ## set rolling window start (only works for whole dataset for now)
                          ,window_start = NULL 
@@ -1314,12 +1314,15 @@ robyn_mmm <- function(hyper_collect
       nrmse.collect <- c()
       decomp.rssd.collect <- c()
       best_mape <- Inf
-      # closeAllConnections()
       # registerDoParallel(cores)  #registerDoParallel(cores=InputCollect$cores)
-      # al <- makeCluster(InputCollect$cores)
-      # registerDoParallel(al)
+
       registerDoFuture()
-      plan(multicore(workers = InputCollect$cores))
+      if (.Platform$OS.type == "unix") {
+        plan(multicore(workers = InputCollect$cores))
+      } else {
+        plan(sequential)
+      }
+      
       # nbrOfWorkers()
       
       getDoParWorkers()
@@ -1595,7 +1598,6 @@ robyn_mmm <- function(hyper_collect
       } # end dopar
       ## end parallel
       
-      # stopCluster(al)
       # stopImplicitCluster()
       
       nrmse.collect <- sapply(doparCollect, function(x) x$nrmse)
