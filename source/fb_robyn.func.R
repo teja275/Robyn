@@ -10,11 +10,15 @@
 
 load_libs <- function() {
   
-  libsNeeded <- c("data.table","stringr","lubridate","doParallel","foreach","glmnet","car","StanHeaders","prophet","rstan","ggplot2","gridExtra","grid","ggpubr","see","PerformanceAnalytics","nloptr","minpack.lm","rPref","reticulate","rstudioapi","corrplot")
+  libsNeeded <- c("data.table","stringr","lubridate","foreach","glmnet","car","StanHeaders","prophet","rstan","ggplot2","gridExtra","grid","ggpubr","see","PerformanceAnalytics","nloptr","minpack.lm","rPref","reticulate","rstudioapi","corrplot","doFuture", "doRNG","doParallel"
+  )
   cat(paste0("Loading required libraries: ", paste(libsNeeded, collapse = ", "), "\n"))
   libsInstalled <- rownames(installed.packages())
   for (l in libsNeeded) {
-    if (require(l, character.only = TRUE)) {} else {install.packages(l)}
+    if (require(l, character.only = TRUE)) {} else {
+      install.packages(l)
+      require(l, character.only = TRUE)
+    }
   }
 }
 
@@ -325,7 +329,7 @@ robyn_inputs <- function(dt_input
     } else {
       
       # when all provided once correctly
-      message("\nall input correct. running robyn_engineering()")
+      message("\nAll input in robyn_inputs() correct. running robyn_engineering()")
       outFeatEng <- robyn_engineering(InputCollect = InputCollect, refresh = FALSE)
       invisible(outFeatEng)
       
@@ -353,7 +357,7 @@ robyn_inputs <- function(dt_input
     } else {
       
       InputCollect$hyperparameters <- hyperparameters
-      message("\nall input correct. running robyn_engineering()")
+      message("\nAll input in robyn_inputs() correct. running robyn_engineering()")
       outFeatEng <- robyn_engineering(InputCollect = InputCollect, refresh = FALSE)
       invisible(outFeatEng)
       
@@ -1240,7 +1244,7 @@ robyn_mmm <- function(hyper_collect
   
   iterNG <-  ifelse(hyper_fixed == FALSE, ceiling(iterations/cores), 1)
   
-  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_list_updated),"hyperparameters,",lambda.n,"-fold ridge x-validation using",cores,"cores...\n")
+  cat("\nRunning", iterTotal,"iterations with evolutionary algorithm on",adstock, "adstocking,", length(hyper_bound_list_updated),"hyperparameters,",lambda.n,"-fold ridge x-validation using", cores,"cores...\n")
   
   ## start Nevergrad optimiser
   
@@ -1311,9 +1315,13 @@ robyn_mmm <- function(hyper_collect
       decomp.rssd.collect <- c()
       best_mape <- Inf
       # closeAllConnections()
-      registerDoParallel(cores)  #registerDoParallel(cores=InputCollect$cores)
+      # registerDoParallel(cores)  #registerDoParallel(cores=InputCollect$cores)
       # al <- makeCluster(InputCollect$cores)
       # registerDoParallel(al)
+      registerDoFuture()
+      plan(multicore(workers = InputCollect$cores))
+      # nbrOfWorkers()
+      
       getDoParWorkers()
       doparCollect <- foreach (
         i = 1:iterPar
@@ -1330,7 +1338,7 @@ robyn_mmm <- function(hyper_collect
                         ,'data.table'
         )
         #, .options.snow = opts
-      )  %dopar%  {
+      )  %dorng%  {
         
         t1 <- Sys.time()
         
@@ -1587,8 +1595,8 @@ robyn_mmm <- function(hyper_collect
       } # end dopar
       ## end parallel
       
-      #stopCluster(al)
-      stopImplicitCluster()
+      # stopCluster(al)
+      # stopImplicitCluster()
       
       nrmse.collect <- sapply(doparCollect, function(x) x$nrmse)
       decomp.rssd.collect <- sapply(doparCollect, function(x) x$decomp.rssd)
@@ -1770,55 +1778,43 @@ robyn_run <- function(InputCollect
     
     ## Run robyn_mmm on set_trials if hyperparameters are not all fixed
     
-    ng_out <- list()
-    ng_algos <- InputCollect$nevergrad_algo # c("DoubleFastGADiscreteOnePlusOne", "DiscreteOnePlusOne", "TwoPointsDE", "DE")
-    
     t0 <- Sys.time()
-    for (optmz in ng_algos) {
-      ng_collect <- list()
-      model_output_collect <- list()
+    
+    # ng_collect <- list()
+    model_output_collect <- list()
+    
+    for (ngt in 1:InputCollect$trials) { 
       
-      for (ngt in 1:InputCollect$trials) { 
+      if (nrow(InputCollect$calibration_input)==0) {
+        cat("\nRunning trial nr.", ngt,"out of",InputCollect$trials,"...\n")
+      } else {
+        cat("\nRunning trial nr.", ngt,"out of",InputCollect$trials,"with calibration...\n")
         
-        if (nrow(InputCollect$calibration_input)==0) {
-          cat("\nRunning trial nr.", ngt,"out of",InputCollect$trials,"...\n")
-        } else {
-          cat("\nRunning trial nr.", ngt,"out of",InputCollect$trials,"with calibration...\n")
-          
-        }
-        # rm(model_output)
-        model_output <- robyn_mmm(hyper_collect = InputCollect$hyperparameters
-                                  ,InputCollect = InputCollect
-                                  ,refresh = refresh
-                                  #,iterations = iterations
-                                  #,cores = cores
-                                  #,optimizer_name = optmz
-                                  
-        )
-        
-        check_coef0 <- any(model_output$resultCollect$decompSpendDist$decomp.rssd == Inf)
-        if (check_coef0) {
-          num_coef0_mod <- model_output$resultCollect$decompSpendDist[decomp.rssd == Inf, uniqueN(paste0(iterNG,"_",iterPar))]
-          num_coef0_mod <- ifelse(num_coef0_mod>InputCollect$iterations, InputCollect$iterations, num_coef0_mod)
-          message("\nThis trial contains ", num_coef0_mod," iterations with all 0 media coefficient. Please reconsider your media variable choice if the pareto choices are unreasonable.
-                  \nRecommendations are: \n1. increase hyperparameter ranges for 0-coef channels on theta (max.reco. c(0, 0.9) ) and gamma (max.reco. c(0.1, 1) ) to give Robyn more freedom\n2. split media into sub-channels, and/or aggregate similar channels, and/or introduce other media\n3. increase trials to get more samples\n")
-        }
-        
-        model_output["trial"] <- ngt
-        #ng_collect[[ngt]] <- model_output$resultCollect$paretoFront[, ':='(trial=ngt, iters = InputCollect$iterations, ng_optmz = optmz)]
-        model_output_collect[[ngt]] <- model_output
-        #model_output_pareto <- robyn_mmm(InputCollect$hyperparameters, out = TRUE)
       }
-      # ng_collect <- rbindlist(ng_collect)
-      # px <- low(ng_collect$nrmse) * low(ng_collect$decomp.rssd)
-      # ng_collect <- psel(ng_collect, px, top = nrow(ng_collect))[order(trial, nrmse)]
-      # ng_out[[which(ng_algos==optmz)]] <- ng_collect
+      
+      model_output <- robyn_mmm(hyper_collect = InputCollect$hyperparameters
+                                ,InputCollect = InputCollect
+                                ,refresh = refresh)
+      
+      check_coef0 <- any(model_output$resultCollect$decompSpendDist$decomp.rssd == Inf)
+      if (check_coef0) {
+        num_coef0_mod <- model_output$resultCollect$decompSpendDist[decomp.rssd == Inf, uniqueN(paste0(iterNG,"_",iterPar))]
+        num_coef0_mod <- ifelse(num_coef0_mod>InputCollect$iterations, InputCollect$iterations, num_coef0_mod)
+        message("\nThis trial contains ", num_coef0_mod," iterations with all 0 media coefficient. Please reconsider your media variable choice if the pareto choices are unreasonable.
+                  \nRecommendations are: \n1. increase hyperparameter ranges for 0-coef channels on theta (max.reco. c(0, 0.9) ) and gamma (max.reco. c(0.1, 1) ) to give Robyn more freedom\n2. split media into sub-channels, and/or aggregate similar channels, and/or introduce other media\n3. increase trials to get more samples\n")
+      }
+      
+      model_output["trial"] <- ngt
+      model_output_collect[[ngt]] <- model_output
     }
+    # ng_collect <- rbindlist(ng_collect)
+    # px <- low(ng_collect$nrmse) * low(ng_collect$decomp.rssd)
+    # ng_collect <- psel(ng_collect, px, top = nrow(ng_collect))[order(trial, nrmse)]
+    # ng_out[[which(ng_algos==optmz)]] <- ng_collect
+    # }
     # ng_out <- rbindlist(ng_out)
     # setnames(ng_out, ".level", "manual_pareto")
-    
   }
-  
   
   #####################################
   #### Collect results for plotting
