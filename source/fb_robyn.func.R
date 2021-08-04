@@ -1188,23 +1188,7 @@ robyn_mmm <- function(hyper_collect
   optimizer_name <- InputCollect$nevergrad_algo
   cores <- InputCollect$cores
   
-  ng <- import("nevergrad")
-  
-  # available optimizers in ng
-  # optimizer_name <- "DoubleFastGADiscreteOnePlusOne"
-  # optimizer_name <- "OnePlusOne"
-  # optimizer_name <- "DE"
-  # optimizer_name <- "RandomSearch"
-  # optimizer_name <- "TwoPointsDE"
-  # optimizer_name <- "Powell"
-  # optimizer_name <- "MetaModel"  CRASH !!!!
-  # optimizer_name <- "SQP"
-  # optimizer_name <- "Cobyla"
-  # optimizer_name <- "NaiveTBPSA"
-  # optimizer_name <- "DiscreteOnePlusOne"
-  # optimizer_name <- "PortfolioDiscreteOnePlusOne"
-  # optimizer_name <- "cGA"
-  # optimizer_name <- "ScrHammersleySearch"
+  ng <- reticulate::py_suppress_warnings(reticulate::import("nevergrad"))
   
   ################################################
   #### Get spend share

@@ -1,48 +1,14 @@
-# DONE: functionalise input/ remove global param to enable packaging: f.inputDT, f.inputParam, f.featureEngineering 
-# DONE: rolling window : # a. replace window , b. replace hyppar bounces, c. replace decomp.rssd
-# DONE: get mROI function?
-# DONE: decomp fix for categorical vars?
-# DONE: nls fit: try Hill? rewrite trycatch? 
-# DONE: close all connection bug=? https://github.com/facebookexperimental/Robyn/issues/108; https://github.com/facebookexperimental/Robyn/pull/106 
-# DONE: adapt allocator and fix plot
-# DONE: fixed week count wday
-# DONE: adapt all paths
-# DONE: adapt robyn_response
-# DONE: adapt prophet plot to be replaced & combine adstock plots
-# DONE: add bar plot for reporting
-# DONE: organic channels
-# DONE: adapt param names, function names 
-# DONE: adapt getting fixed model result
-# DONE: new dummy vars newsletter and events
-# DONE: put max run as default for response function
-# DONE: adapt dep type, CPA or add avg conv value for ROI
-# DONE: add observation warning
-# DONE: adjusted rsq
-# DONE: adapt allocator for robyn_object 
-# DONE: adapt robyn_mmm param ...
-# DONE: add ROI report plot
-# DONE: adapt hyperparameter defining workflow
-# check convergence
-# clean up comments & prints
-# add survey
-
-# correlation matrix plot,  channel detail plot for selecte model (mROI)
-# add pareto clustering
-# returning pParFront, change cat() to message() for shiny
-
-
 # Copyright (c) Facebook, Inc. and its affiliates.
 
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
 #############################################################################################
-####################    Facebook MMM Open Source 'Robyn' Beta - V21.0  ######################
-####################                    2021-03-03                     ######################
+####################         Facebook MMM Open Source - Robyn 3.0.0    ######################
+####################                    2021-07-30                     ######################
 #############################################################################################
 
-## R version 4.0.3 (2020-10-10) ## Update to R version 4.0.3 to avoid potential errors
-## RStudio version 1.2.1335
+## R version 4.1.0
 rm(list=ls()); gc()
 
 ################################################################
@@ -65,7 +31,7 @@ load_libs()
 ## option 1 nevergrad installation via conda
 # conda_create("r-reticulate") # must run this line once
 # conda_install("r-reticulate", "nevergrad", pip=TRUE) 
-use_condaenv("r-reticulate")
+# use_condaenv("r-reticulate")
 
 ## option 2 nevergrad installation via PIP
 # virtualenv_create("r-reticulate")
@@ -86,11 +52,11 @@ dt_holidays <- fread(paste0(script_path, "holidays.csv"))
 
 ## IMPORTANT: robyn_object must has extension .RData. The object name can be changed.
 robyn_object <- "/Users/gufengzhou/Documents/robyn_dev_output/Robyn.RData"
-registerDoSEQ(); detectCores()
+registerDoSEQ(); availableCores()
 
 
 ################################################################
-#### Step 2: define variables & model parameters
+#### Step 2: define model variables & parameters
 
 InputCollect <- robyn_inputs(dt_input = dt_input
                              ,dt_holidays = dt_holidays
@@ -126,16 +92,16 @@ InputCollect <- robyn_inputs(dt_input = dt_input
                              ## set cores for parallel computing
                              ,cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
                              
-                             ## set rolling window start (only works for whole dataset for now)
+                             ## set rolling window start
                              ,window_start = "2016-11-23"
                              ,window_end = "2018-08-22"
                              
                              ## set model core features
                              ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
-                             ,iterations = 150  # number of allowed iterations per trial. 500 is recommended
+                             ,iterations = 200  # number of allowed iterations per trial. 500 is recommended
                              
-                             ,nevergrad_algo = "DiscreteOnePlusOne" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
-                             ,trials = 1 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
+                             ,nevergrad_algo = "TwoPointsDE" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
+                             ,trials = 2 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
                              ## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
                              
                              #,hyperparameters = hyperparameters
@@ -220,10 +186,11 @@ InputCollect <- robyn_inputs(InputCollect = InputCollect
 ################################################################
 #### Step 4: Build initial model
 
+
 OutputCollect <- robyn_run(InputCollect = InputCollect
                            , plot_folder = robyn_object
-                           , pareto_fronts = 3
-                           , plot_pareto = TRUE)
+                           , pareto_fronts = 1
+                           , plot_pareto = F)
 
 
 ################################################################
@@ -232,7 +199,7 @@ OutputCollect <- robyn_run(InputCollect = InputCollect
 ## compare all model onepagers in the plot folder and select one that mostly represents your business reality
 
 OutputCollect$allSolutions
-select_model <- "1_12_3"
+select_model <- "2_34_5"
 robyn_save(robyn_object = robyn_object
            , select_model = select_model
            , InputCollect = InputCollect
@@ -278,7 +245,7 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
                        , dt_input = dt_input
                        , dt_holidays = dt_holidays
                        , refresh_steps = 13 # refresh_steps = 4 means refresh model's rolling window will move forward 4 weeks 
-                       , refresh_mode = "auto" # "auto" means the refresh function will move forward until no more data available
+                       , refresh_mode = "manual" # "auto"  or "manual". auto means the refresh function will move forward until no more data available
                        , refresh_iters = 150 # iteration for refresh
                        , refresh_trials = 1 # trial for refresh
 )
@@ -333,7 +300,7 @@ Response2/Spend2 # ROI for search 81k
 
 
 ################################################################
-#### Optinal: get old model results
+#### Optional: get old model results
 
 # get old hyperparameters and select model
 dt_hyper_fixed <- fread("/Users/gufengzhou/Documents/robyn_dev_output/2021-07-29 00.56 init/pareto_hyperparameters.csv")
