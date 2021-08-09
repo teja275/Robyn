@@ -329,7 +329,7 @@ robyn_inputs <- function(dt_input
     } else {
       
       # when all provided once correctly
-      message("\nAll input in robyn_inputs() correct. running robyn_engineering()")
+      message("\nAll input in robyn_inputs() correct. Ready to run robyn_run(...)")
       outFeatEng <- robyn_engineering(InputCollect = InputCollect, refresh = FALSE)
       invisible(outFeatEng)
       

@@ -1,0 +1,59 @@
+
+ng_algos <- c("OnePlusOne"
+              ,"DoubleFastGADiscreteOnePlusOne"
+              ,"DiscreteOnePlusOne"
+              ,"PortfolioDiscreteOnePlusOne"
+              ,"DE"
+              ,"TwoPointsDE"
+              #,"MetaModel"
+              ,"NaiveTBPSA"
+              ,"cGA"
+              ,"RandomSearch")
+ng_algos <- c("DE", "TwoPointsDE")
+
+source(paste(script_path, "fb_robyn.func.R", sep=""))
+
+al_collect <- list()
+for (al in ng_algos) {
+  InputCollect$iterations <- 2000
+  InputCollect$trials <- 5
+  InputCollect$cores <- availableCores()
+  InputCollect$nevergrad_algo <- al
+  
+  options(parallelly.fork.enable = F)
+  supportsMulticore()
+  OutputCollect <- robyn_run(InputCollect = InputCollect
+                             , plot_folder = robyn_object
+                             , pareto_fronts = 1
+                             , plot_pareto = F)
+  
+  plotname <- paste0(InputCollect$nevergrad_algo,"_", InputCollect$iterations, "x", InputCollect$trials)
+  dt_test <- rbindlist(lapply(OutputCollect$model_output_collect, function (x) x$resultCollect$resultHypParam[, trial:= x$trial]))
+  dt_test[, ':='(trial=as.factor(trial)
+                 , combined_error= sqrt(decomp.rssd^2+nrmse^2)
+                 , test_setup = plotname
+                 , iterations = (iterNG-1)*InputCollect$cores + iterPar
+  )]
+  dt_test[, combined_error:= sqrt(decomp.rssd^2+nrmse^2)]
+  dt_test <- dt_test[order(trial, ElapsedAccum)][, combined_error_min:= cummin(combined_error), by = trial]
+  al_collect[[which(al == ng_algos)]] <- dt_test
+  
+  fwrite(dt_test, paste0("/Users/gufengzhou/Documents/robyn_dev_output/",plotname,".csv"))
+}
+
+dt_al_collect <- rbindlist(al_collect)
+#dt_al_collect[, iterations:= (iterNG-1)*InputCollect$cores + iterPar]
+plotTest <- ggplot(dt_al_collect, aes(x=iterations, y=combined_error_min, color = trial)) + 
+  facet_wrap(~ test_setup) +
+  geom_line() +
+  labs(x ="seconds", y = "minimum combined error")
+plotTest
+fwrite(dt_al_collect, paste0("/Users/gufengzhou/Documents/robyn_dev_output/ng_algo_compare_",InputCollect$iterations, "x", InputCollect$trials,".csv"))
+
+ggsave(paste0("/Users/gufengzhou/Documents/robyn_dev_output/ng_algo_compare_",InputCollect$iterations, "x", InputCollect$trials,".png")
+       , plot = plotTest
+       , dpi = 600, width = 16, height = 9)
+
+
+
+.Platform$OS.type

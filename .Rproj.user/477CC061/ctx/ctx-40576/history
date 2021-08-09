@@ -1,0 +1,512 @@
+# expResponseUnit <- -eval_f(expSpendUnit)[["objective.channel"]]
+eval_g_eq <- function(X) {
+constr <- sum(X) - expSpendUnitTotal
+grad <- rep(1, length(X))
+return( list("constraints" = constr
+,"jacobian" = grad))
+}
+eval_g_ineq <- function(X) {
+constr <- sum(X) - expSpendUnitTotal
+grad <- rep(1, length(X))
+return( list("constraints" = constr
+,"jacobian" = grad))
+}
+## set initial values and bounds
+lb <- histSpendUnit * channelConstrLowSorted
+ub <- histSpendUnit * channelConstrUpSorted
+x0 <- lb
+## set optim options
+if (optim_algo == "MMA_AUGLAG") {
+local_opts <- list( "algorithm" = "NLOPT_LD_MMA",
+"xtol_rel" = 1.0e-10 )
+} else if (optim_algo == "SLSQP_AUGLAG") {
+local_opts <- list( "algorithm" = "NLOPT_LD_SLSQP",
+"xtol_rel" = 1.0e-10 )
+}
+opts <- list( "algorithm" = "NLOPT_LD_AUGLAG",
+"xtol_rel" = 1.0e-10,
+"maxeval" = maxeval,
+"local_opts" = local_opts )
+## run optim
+if (constr_mode  == "eq") {
+nlsMod <- nloptr::nloptr( x0=x0,
+eval_f=eval_f,
+lb=lb,
+ub=ub,
+#eval_g_ineq=eval_g_ineq,
+eval_g_eq=eval_g_eq,
+opts=opts)
+} else if (constr_mode  == "ineq") {
+nlsMod <- nloptr::nloptr( x0=x0,
+eval_f=eval_f,
+lb=lb,
+ub=ub,
+eval_g_ineq=eval_g_ineq,
+#eval_g_eq=eval_g_eq,
+opts=opts)
+}
+#print(nlsMod)
+## collect output
+dt_bestModel <- dt_bestCoef[, .(rn, mean_spend, xDecompAgg, roi_total, roi_mean)][order(rank(rn))]
+dt_optimOut <- data.table(
+channels = mediaVarSortedFiltered
+,histSpend = histSpend[mediaVarSortedFiltered]
+,histSpendTotal = histSpendTotal
+,initSpendUnitTotal = histSpendUnitTotal
+,initSpendUnit = histSpendUnit
+,initSpendShare = histSpendShare
+# ,histResponse = dt_bestModel$xDecompAgg
+# ,histResponseTotal = sum(dt_bestModel$xDecompAgg)
+# ,histResponseUnit = dt_bestModel$xDecompAgg/nPeriod
+# ,histResponseUnitTotal = sum(dt_bestModel$xDecompAgg/nPeriod)
+,initResponseUnit = histResponseUnitModel
+,initResponseUnitTotal = sum(xDecompAggMedia$mean_response)
+,initRoiUnit = histResponseUnitModel/histSpendUnit
+,expSpendTotal = expected_spend
+,expSpendUnitTotal = expSpendUnitTotal
+,expSpendUnitDelta = expSpendUnitTotal/histSpendUnitTotal-1
+#,expSpendUnit = expSpendUnit
+# ,expResponseUnit = expResponseUnit
+# ,expResponseUnitTotal = sum(expResponseUnit)
+# ,expRoiUnit = expResponseUnit / expSpendUnit
+,optmSpendUnit = nlsMod$solution
+,optmSpendUnitDelta = (nlsMod$solution / histSpendUnit -1)
+,optmSpendUnitTotal = sum(nlsMod$solution)
+,optmSpendUnitTotalDelta = sum(nlsMod$solution)/histSpendUnitTotal-1
+,optmSpendShareUnit = nlsMod$solution / sum(nlsMod$solution)
+,optmResponseUnit = -eval_f(nlsMod$solution)[["objective.channel"]]
+,optmResponseUnitTotal = sum(-eval_f(nlsMod$solution)[["objective.channel"]])
+,optmRoiUnit = -eval_f(nlsMod$solution)[["objective.channel"]] / nlsMod$solution
+,optmResponseUnitLift = (-eval_f(nlsMod$solution)[["objective.channel"]] / histResponseUnitModel) -1
+)
+dt_optimOut[, optmResponseUnitTotalLift:= (optmResponseUnitTotal / initResponseUnitTotal) -1]
+print(dt_optimOut)
+# dt_optimOut[, .(channels, initSpendUnit, initResponseUnit, initSpendUnitTotal, initRoiUnit, expSpendUnitTotal,optmSpendUnit, optmResponseUnit,  optmRoiUnit, optmResponseUnitLift, optmResponseUnitTotalLift)]
+## plot allocator results
+plotDT_total <- copy(dt_optimOut) # plotDT_total <- optim_result$dt_optimOut
+# ROI comparison plot
+plotDT_roi <- plotDT_total[, c("channels", "initRoiUnit", "optmRoiUnit")][order(rank(channels))]
+plotDT_roi[, channels:=as.factor(channels)]
+chn_levels <- plotDT_roi[, as.character(channels)]
+plotDT_roi[, channels:=factor(channels, levels = chn_levels)]
+setnames(plotDT_roi, names(plotDT_roi), new = c("channel", "initial roi", "optimised roi"))
+plotDT_roi <- suppressWarnings(melt.data.table(plotDT_roi, id.vars = "channel", value.name = "roi"))
+p11 <- ggplot(plotDT_roi, aes(x=channel, y=roi,fill = variable)) +
+geom_bar(stat = "identity", width = 0.5, position = "dodge") +
+coord_flip() +
+scale_fill_brewer(palette = "Paired") +
+geom_text(aes(label=round(roi,2), hjust=1, size=2.0),  position=position_dodge(width=0.5), fontface = "bold", show.legend = FALSE) +
+theme( legend.title = element_blank(), legend.position = c(0.9, 0.2) ,axis.text.x = element_blank(), legend.background=element_rect(colour='grey', fill='transparent')) +
+labs(title = "Initial vs. optimised mean ROI"
+,subtitle = paste0("Total spend increases ", plotDT_total[, round(mean(optmSpendUnitTotalDelta)*100,1)], "%"
+,"\nTotal response increases ", plotDT_total[, round(mean(optmResponseUnitTotalLift)*100,1)], "% with optimised spend allocation")
+,y="", x="Channels")
+# Response comparison plot
+plotDT_resp <- plotDT_total[, c("channels", "initResponseUnit", "optmResponseUnit")][order(rank(channels))]
+plotDT_resp[, channels:=as.factor(channels)]
+chn_levels <- plotDT_resp[, as.character(channels)]
+plotDT_resp[, channels:=factor(channels, levels = chn_levels)]
+setnames(plotDT_resp, names(plotDT_resp), new = c("channel", "initial response / time unit", "optimised response / time unit"))
+plotDT_resp <- suppressWarnings(melt.data.table(plotDT_resp, id.vars = "channel", value.name = "response"))
+p12 <- ggplot(plotDT_resp, aes(x=channel, y=response, fill = variable)) +
+geom_bar(stat = "identity", width = 0.5, position = "dodge") +
+coord_flip() +
+scale_fill_brewer(palette = "Paired") +
+geom_text(aes(label=round(response,0), hjust=1, size=2.0), position=position_dodge(width=0.5), fontface = "bold", show.legend = FALSE) +
+theme( legend.title = element_blank(), legend.position = c(0.8, 0.2) ,axis.text.x = element_blank(), legend.background=element_rect(colour='grey', fill='transparent')) +
+labs(title = "Initial vs. optimised mean response"
+,subtitle = paste0("Total spend increases ", plotDT_total[, round(mean(optmSpendUnitTotalDelta)*100,1)], "%"
+,"\nTotal response increases ", plotDT_total[, round(mean(optmResponseUnitTotalLift)*100,1)], "% with optimised spend allocation"
+)
+,y="", x="Channels")
+# budget share comparison plot
+plotDT_share <- plotDT_total[, c("channels", "initSpendShare", "optmSpendShareUnit")][order(rank(channels))]
+plotDT_share[, channels:=as.factor(channels)]
+chn_levels <- plotDT_share[, as.character(channels)]
+plotDT_share[, channels:=factor(channels, levels = chn_levels)]
+setnames(plotDT_share, names(plotDT_share), new = c("channel", "initial avg.spend share", "optimised avg.spend share"))
+plotDT_share <- suppressWarnings(melt.data.table(plotDT_share, id.vars = "channel", value.name = "spend_share"))
+p13 <- ggplot(plotDT_share, aes(x=channel, y=spend_share, fill = variable)) +
+geom_bar(stat = "identity", width = 0.5, position = "dodge") +
+coord_flip() +
+scale_fill_brewer(palette = "Paired") +
+geom_text(aes(label=paste0(round(spend_share*100,2),"%"), hjust=1, size=2.0), position=position_dodge(width=0.5), fontface = "bold", show.legend = FALSE) +
+theme( legend.title = element_blank(), legend.position = c(0.8, 0.2) ,axis.text.x = element_blank(), legend.background=element_rect(colour='grey', fill='transparent')) +
+labs(title = "Initial vs. optimised budget allocation"
+,subtitle = paste0("Total spend increases ", plotDT_total[, round(mean(optmSpendUnitTotalDelta)*100,1)], "%"
+,"\nTotal response increases ", plotDT_total[, round(mean(optmResponseUnitTotalLift)*100,1)], "% with optimised spend allocation"
+)
+,y="", x="Channels")
+## response curve
+plotDT_saturation <- melt.data.table(OutputCollect$mediaVecCollect[solID==select_model & type == "saturatedSpendReversed"], id.vars = "ds", measure.vars = InputCollect$paid_media_vars, value.name = "spend", variable.name = "channel")
+plotDT_decomp <- melt.data.table(OutputCollect$mediaVecCollect[solID==select_model & type == "decompMedia"], id.vars = "ds", measure.vars = InputCollect$paid_media_vars, value.name = "response", variable.name = "channel")
+plotDT_scurve <- cbind(plotDT_saturation, plotDT_decomp[, .(response)])
+plotDT_scurve <- plotDT_scurve[spend>=0] # remove outlier introduced by MM nls fitting
+plotDT_scurveMeanResponse <- OutputCollect$xDecompAgg[solID==select_model & rn %in% InputCollect$paid_media_vars]
+dt_optimOutScurve <- rbind(dt_optimOut[, .(channels, initSpendUnit, initResponseUnit)][, type:="initial"], dt_optimOut[, .(channels, optmSpendUnit, optmResponseUnit)][, type:="optimised"], use.names = FALSE)
+setnames(dt_optimOutScurve, c("channels", "spend", "response", "type"))
+p14 <- ggplot(data= plotDT_scurve, aes(x=spend, y=response, color = channel)) +
+geom_line() +
+geom_point(data = dt_optimOutScurve, aes(x=spend, y=response, color = channels, shape = type), size = 2) +
+geom_text(data = dt_optimOutScurve, aes(x=spend, y=response, color = channels, label = round(spend,0)),  show.legend = FALSE, hjust = -0.2) +
+#geom_point(data = dt_optimOut, aes(x=optmSpendUnit, y=optmResponseUnit, color = channels, fill = "optimised"), shape=2) +
+#geom_text(data = dt_optimOut, aes(x=optmSpendUnit, y=optmResponseUnit, color = channels, label = round(optmSpendUnit,0)),  show.legend = FALSE, hjust = -0.2) +
+theme(legend.position = c(0.9, 0.4), legend.title=element_blank()) +
+labs(title="Response curve and mean spend by channel"
+,subtitle = paste0("rsq_train: ", plotDT_scurveMeanResponse[,round(mean(rsq_train),4)],
+", nrmse = ", plotDT_scurveMeanResponse[, round(mean(nrmse),4)],
+", decomp.rssd = ", plotDT_scurveMeanResponse[, round(mean(decomp.rssd),4)],
+", mape.lift = ", plotDT_scurveMeanResponse[, round(mean(mape),4)])
+,x="Spend" ,y="response")
+grobTitle <- paste0("Budget allocator optimum result for model ID ", select_model)
+# pgbl <- arrangeGrob(p13,p12,p11,p14, ncol=2, top = text_grob(grobTitle, size = 15, face = "bold"))
+# grid.draw(pgbl)
+# g13 <- ggplotGrob(p13)
+# g12 <- ggplotGrob(p12)
+# g14 <- ggplotGrob(p14)
+# maxWidth <- unit.pmax(g13$widths, g12$widths, g14$widths)
+# g13$widths <- g12$widths <- g14$widths <- maxWidth
+# layout <- cbind(c(1,2), c(3,3))
+# g <- grid.arrange(g13, g12, g14,   layout_matrix=layout, top = text_grob(grobTitle, size = 15, face = "bold"))
+g <- (p13 + p12) / p14 + plot_annotation(title = grobTitle, theme = theme(plot.title = element_text(hjust = 0.5)))
+cat("\nSaving plots to ", paste0(OutputCollect$plot_folder, select_model,"_reallocated.png"), "...\n")
+ggsave(filename=paste0(OutputCollect$plot_folder, select_model,"_reallocated.png")
+, plot = g
+, dpi = 400, width = 18, height = 14)
+fwrite(dt_optimOut, paste0(OutputCollect$plot_folder, select_model,"_reallocated.csv"))
+listAllocator <- list(dt_optimOut=dt_optimOut, nlsMod=nlsMod)
+#assign("listOutputAllocator", listAllocator, envir = .GlobalEnv)
+return(listAllocator)
+}
+#lib https://cran.r-project.org/web/packages/nloptr/nloptr.pdf non linear function with equal and unequal constraints + bounds
+#find gradient of a function https://socratic.org/questions/how-do-you-find-the-gradient-of-a-function-at-a-given-point
+# # lib https://cran.r-project.org/web/packages/nloptr/nloptr.pdf
+# # find gradient of a function https://socratic.org/questions/how-do-you-find-the-gradient-of-a-function-at-a-given-point
+AllocatorCollect <- robyn_allocator(
+robyn_object = robyn_object
+# , select_run
+, optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
+, scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
+# specify future spend volume. only applies when scenario = "max_response_expected_spend"
+#, expected_spend = 100000
+# specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
+#, expected_spend_days = 90
+# must be between 0.01-1 and has same length and order as paid_media_vars
+, channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7)
+# not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
+, channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5)
+)
+AllocatorCollect <- robyn_allocator(
+robyn_object = robyn_object
+# , select_run
+, optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
+, scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
+# specify future spend volume. only applies when scenario = "max_response_expected_spend"
+#, expected_spend = 100000
+# specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
+#, expected_spend_days = 90
+# must be between 0.01-1 and has same length and order as paid_media_vars
+, channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7)
+# not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
+, channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5)
+)
+# devtools::install_github("facebookexperimental/Robyn@package_test")
+devtools::install_github("facebookexperimental/Robyn@package_test")
+## Install and load libraries
+library(Robyn) # devtools::install_github("facebookexperimental/Robyn@package_test")
+## Check simulated dataset or load your own dataset
+data("dt_simulated_weekly")
+head(dt_simulated_weekly)
+## Check holidays from Prophet
+# 59 countries included. If your country is not included, please manually add it.
+# Tipp: any events can be added into this table, school break, events etc.
+data("dt_prophet_holidays")
+head(dt_prophet_holidays)
+## Set robyn_object. It must have extension .RData. The object name can be different than Robyn:
+robyn_object <- "~/Desktop/Robyn.RData"
+InputCollect <- robyn_inputs(
+dt_input = dt_simulated_weekly
+,dt_holidays = dt_prophet_holidays
+#######################
+#### set variables ####
+,date_var = "DATE" # date format must be "2020-01-01"
+,dep_var = "revenue" # there should be only one dependent variable
+,dep_var_type = "revenue" # "revenue" or "conversion"
+# "trend","season", "weekday", "holiday" are provided and case-sensitive.
+# Recommended to at least keep Trend & Holidays
+,prophet_vars = c("trend", "season", "holiday")
+# c("default", "positive", and "negative"). Recommend as default.
+# Must be same length as prophet_vars
+,prophet_signs = c("default","default", "default")
+# only one country allowed once. Including national holidays for 59 countries,
+# whose list can be found on our githut guide
+,prophet_country = "DE"
+# typically competitors, price & promotion, temperature,  unemployment rate etc
+,context_vars = c("competitor_sales_B", "events")
+# c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
+,context_signs = c("default", "default")
+# c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S").
+# We recommend to use media exposure metrics like impressions, GRP etc for the model.
+# If not applicable, use spend instead
+,paid_media_vars = c("tv_S","ooh_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P")
+# c("default", "positive", and "negative"). must have same length as paid_media_vars.
+# control the signs of coefficients for media variables
+,paid_media_signs = c("positive", "positive","positive", "positive", "positive")
+# spends must have same order and same length as paid_media_vars
+,paid_media_spends = c("tv_S","ooh_S",	"print_S"	,"facebook_S"	,"search_S")
+,organic_vars = c("newsletter")
+,organic_signs = c("positive") # must have same length as organic_vars
+,factor_vars = c("events") # specify which variables in context_vars and organic_vars are factorial
+##############################
+#### set model parameters ####
+## set cores for parallel computing
+,cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
+## set rolling window start
+,window_start = "2016-11-23"
+,window_end = "2018-08-22"
+## set model core features
+# Weibull is more flexible, yet has one more parameter and thus takes longer
+,adstock = "geometric" # geometric or weibull
+,iterations = 100  # number of allowed iterations per trial. 500 is recommended
+# selected algorithm for Nevergrad, the gradient-free optimization library
+# https://facebookresearch.github.io/nevergrad/index.html
+,nevergrad_algo = "TwoPointsDE"
+# 40 is recommended without calibration, 100 with calibration.
+,trials = 2 # number of allowed iterations per trial
+## Time estimation: with geometric adstock, 2000 iterations * 5 trials and 6 cores,
+# it takes about 30 minutes. Weibull takes at least twice as much time.
+#,hyperparameters = hyperparameters
+# ,calibration_input = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
+#                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
+#                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
+#                        liftAbs = c(400000, 300000, 200000))
+)
+# helper plots: set plot to TRUE for transformation examples:
+# adstock transformation example plot, helping you understand geometric/theta and weibull/shape/scale transformation
+plot_adstock(FALSE)
+# s-curve transformation example plot, helping you understand hill/alpha/gamma transformatio
+plot_saturation(FALSE)
+hyper_names(adstock = InputCollect$adstock, all_media = InputCollect$all_media)
+hyperparameters <- list(
+facebook_I_alphas = c(0.5, 3) # example bounds for alpha
+,facebook_I_gammas = c(0.3, 1) # example bounds for gamma
+,facebook_I_thetas = c(0, 0.3) # example bounds for theta
+#,facebook_I_shapes = c(0.0001, 2) # example bounds for shape
+#,facebook_I_scales = c(0, 0.1) # example bounds for scale
+,print_S_alphas = c(0.5, 3)
+,print_S_gammas = c(0.3, 1)
+,print_S_thetas = c(0.1, 0.4)
+#,print_S_shapes = c(0.0001, 2)
+#,print_S_scales = c(0, 0.1)
+,tv_S_alphas = c(0.5, 3)
+,tv_S_gammas = c(0.3, 1)
+,tv_S_thetas = c(0.3, 0.8)
+#,tv_S_shapes = c(0.0001, 2)
+#,tv_S_scales= c(0, 0.1)
+,search_clicks_P_alphas = c(0.5, 3)
+,search_clicks_P_gammas = c(0.3, 1)
+,search_clicks_P_thetas = c(0, 0.3)
+#,search_clicks_P_shapes = c(0.0001, 2)
+#,search_clicks_P_scales = c(0, 0.1)
+,ooh_S_alphas = c(0.5, 3)
+,ooh_S_gammas = c(0.3, 1)
+,ooh_S_thetas = c(0.1, 0.4)
+#,ooh_S_shapes = c(0.0001, 2)
+#,ooh_S_scales = c(0, 0.1)
+,newsletter_alphas = c(0.5, 3)
+,newsletter_gammas = c(0.3, 1)
+,newsletter_thetas = c(0.1, 0.4)
+#,newsletter_shapes = c(0.0001, 2)
+#,newsletter_scales = c(0, 0.1)
+)
+InputCollect <- robyn_inputs(InputCollect = InputCollect
+, hyperparameters = hyperparameters)
+OutputCollect <- robyn_run(InputCollect = InputCollect
+, plot_folder = robyn_object
+, pareto_fronts = 1
+, plot_pareto = TRUE)
+OutputCollect$allSolutions
+select_model <- "2_13_3"
+robyn_save(robyn_object = robyn_object
+, select_model = select_model
+, InputCollect = InputCollect
+, OutputCollect = OutputCollect)
+# Check media summary for selected model
+OutputCollect$xDecompAgg[solID == select_model & !is.na(mean_spend),
+.(rn, coef,mean_spend, mean_response, roi_mean, total_spend,
+total_response = xDecompAgg, roi_total, solID)]
+AllocatorCollect <- robyn_allocator(
+InputCollect = InputCollect
+,OutputCollect = OutputCollect
+# input one of the model IDs in model_output_collect$allSolutions to get optimization result
+,select_model = select_model
+,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
+,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
+# specify future spend volume. only applies when scenario = "max_response_expected_spend"
+#,expected_spend = 100000
+# specify period for the future spend volume in days. Only applies when scenario = "max_response_expected_spend"
+#,expected_spend_days = 90
+# must be between 0.01-1 and has same length and order as paid_media_vars
+,channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7)
+# not recommended to 'exaggerate' upper bounds.
+# 1.5 means channel budget can increase to 150% of current level
+,channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5)
+)
+Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
+, dt_input = dt_simulated_weekly
+, dt_holidays = dt_prophet_holidays
+# refresh_steps = 4 means refresh model's rolling window will move forward 4 weeks
+, refresh_steps = 13
+# "auto" means the refresh function will move forward until no more data available
+, refresh_mode = "manual"
+, refresh_iters = 150 # iteration for refresh
+, refresh_trials = 1 # trial for refresh
+)
+AllocatorCollect <- robyn_allocator(
+robyn_object = robyn_object
+# , select_run
+, optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
+, scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
+# specify future spend volume. only applies when scenario = "max_response_expected_spend"
+#, expected_spend = 100000
+# specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
+#, expected_spend_days = 90
+# must be between 0.01-1 and has same length and order as paid_media_vars
+, channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7)
+# not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
+, channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5)
+)
+# get response for 80k
+Spend1 <- 80000
+Response1 <- robyn_response(
+robyn_object = robyn_object
+#, select_run = 1 # 2 means the second refresh model. 0 means the initial model
+, paid_media_var = "search_clicks_P"
+, Spend = Spend1)
+Response1/Spend1 # ROI for search 80k
+# get response for 81k
+Spend2 <- Spend1+1000
+Response2 <- robyn_response(
+robyn_object = robyn_object
+#, select_run = 1
+, paid_media_var = "search_clicks_P"
+, Spend = Spend2)
+Response2/Spend2 # ROI for search 81k
+# marginal ROI of next 1000$ from 80k spend level for search
+(Response2-Response1)/(Spend2-Spend1)
+# Get old hyperparameters and select model
+dt_hyper_fixed <- fread("~/Desktop/2021-07-29 00.56 init/pareto_hyperparameters.csv")
+369/43100
+107/18900
+4541/1177342
+10000/500
+500/1177342
+13/92
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+#############################################################################################
+####################         Facebook MMM Open Source - Robyn 3.0.0    ######################
+####################                    2021-07-30                     ######################
+#############################################################################################
+## R version 4.1.0
+rm(list=ls()); gc()
+################################################################
+#### Step 0: setup environement
+## set locale for non English R
+# Sys.setlocale("LC_TIME", "English") # Sys.setlocale("LC_ALL", 'en_US.UTF-8')
+## load scripts
+script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
+source(paste(script_path, "fb_robyn.func.R", sep=""))
+source(paste(script_path, "fb_robyn.optm.R", sep=""))
+conda_install("r-reticulate", "nevergrad", pip=TRUE)
+## load libraries
+load_libs()
+conda_install("r-reticulate", "nevergrad", pip=TRUE)
+use_condaenv("r-reticulate")
+## load input data & holiday.
+## Please note the simulated dataset includes new variables "newsletter" and "events" now to demonstrate usage of factor_vars and organic_vars
+dt_input <- fread(paste0(script_path, "de_simulated_data.csv"))
+dt_holidays <- fread(paste0(script_path, "holidays.csv"))
+## IMPORTANT: robyn_object must has extension .RData. The object name can be changed.
+robyn_object <- "/Users/gufengzhou/Documents/robyn_dev_output/Robyn.RData"
+registerDoSEQ(); availableCores()
+InputCollect <- robyn_inputs(dt_input = dt_input
+,dt_holidays = dt_holidays
+#######################
+#### set variables ####
+,date_var = "DATE" # date format must be "2020-01-01"
+,dep_var = "revenue" # there should be only one dependent variable
+,dep_var_type = "revenue" # "revenue" or "conversion"
+,prophet_vars = c("trend", "season", "holiday") # "trend","season", "weekday", "holiday" are provided and case-sensitive. Recommended to at least keep Trend & Holidays
+,prophet_signs = c("default","default", "default") # c("default", "positive", and "negative"). Recommend as default. Must be same length as prophet_vars
+,prophet_country = "DE" # only one country allowed once. Including national holidays for 59 countries, whose list can be found on our githut guide
+,context_vars = c("competitor_sales_B", "events") # typically competitors, price & promotion, temperature,  unemployment rate etc
+,context_signs = c("default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
+,paid_media_vars = c("tv_S","ooh_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P") # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
+,paid_media_signs = c("positive", "positive","positive", "positive", "positive") # c("default", "positive", and "negative"). must have same length as paid_media_vars. control the signs of coefficients for media variables
+,paid_media_spends = c("tv_S","ooh_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as paid_media_vars
+,organic_vars = c("newsletter")
+,organic_signs = c("positive") # must have same length as organic_vars
+,factor_vars = c("events") # specify which variables in context_vars and organic_vars are factorial
+##############################
+#### set model parameters ####
+## set cores for parallel computing
+,cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
+## set rolling window start
+,window_start = "2016-11-23"
+,window_end = "2018-08-22"
+## set model core features
+,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
+,iterations = 2000  # number of allowed iterations per trial. 500 is recommended
+,nevergrad_algo = "TwoPointsDE" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
+,trials = 5 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
+## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
+#,hyperparameters = hyperparameters
+# ,calibration_input = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
+#                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
+#                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
+#                        liftAbs = c(400000, 300000, 200000))
+)
+# helper plots: set plot to TRUE for transformation examples
+plot_adstock(FALSE) # adstock transformation example plot, helping you understand geometric/theta and weibull/shape/scale transformation
+plot_saturation(FALSE) # s-curve transformation example plot, helping you understand hill/alpha/gamma transformatio
+hyper_names(adstock = InputCollect$adstock, all_media = InputCollect$all_media)
+hyperparameters <- list(
+facebook_I_alphas = c(0.5, 3) # example bounds for alpha
+,facebook_I_gammas = c(0.3, 1) # example bounds for gamma
+,facebook_I_thetas = c(0, 0.3) # example bounds for theta
+#,facebook_I_shapes = c(0.0001, 2) # example bounds for shape
+#,facebook_I_scales = c(0, 0.1) # example bounds for scale
+,print_S_alphas = c(0.5, 3)
+,print_S_gammas = c(0.3, 1)
+,print_S_thetas = c(0.1, 0.4)
+#,print_S_shapes = c(0.0001, 2)
+#,print_S_scales = c(0, 0.1)
+,tv_S_alphas = c(0.5, 3)
+,tv_S_gammas = c(0.3, 1)
+,tv_S_thetas = c(0.3, 0.8)
+#,tv_S_shapes = c(0.0001, 2)
+#,tv_S_scales= c(0, 0.1)
+,search_clicks_P_alphas = c(0.5, 3)
+,search_clicks_P_gammas = c(0.3, 1)
+,search_clicks_P_thetas = c(0, 0.3)
+#,search_clicks_P_shapes = c(0.0001, 2)
+#,search_clicks_P_scales = c(0, 0.1)
+,ooh_S_alphas = c(0.5, 3)
+,ooh_S_gammas = c(0.3, 1)
+,ooh_S_thetas = c(0.1, 0.4)
+#,ooh_S_shapes = c(0.0001, 2)
+#,ooh_S_scales = c(0, 0.1)
+,newsletter_alphas = c(0.5, 3)
+,newsletter_gammas = c(0.3, 1)
+,newsletter_thetas = c(0.1, 0.4)
+#,newsletter_shapes = c(0.0001, 2)
+#,newsletter_scales = c(0, 0.1)
+)
+InputCollect <- robyn_inputs(InputCollect = InputCollect
+, hyperparameters = hyperparameters)
+OutputCollect <- robyn_run(InputCollect = InputCollect
+, plot_folder = robyn_object
+, pareto_fronts = 1
+, plot_pareto = F)

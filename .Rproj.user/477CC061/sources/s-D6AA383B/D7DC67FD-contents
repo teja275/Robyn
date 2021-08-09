@@ -5,7 +5,7 @@
 
 #############################################################################################
 ####################         Facebook MMM Open Source - Robyn 3.0.0    ######################
-####################                    2021-08-09                     ######################
+####################                    2021-07-30                     ######################
 #############################################################################################
 
 ## R version 4.1.0
@@ -15,7 +15,7 @@ rm(list=ls()); gc()
 #### Step 0: setup environement
 
 ## set locale for non English R
-# Sys.setlocale("LC_TIME", "C") 
+# Sys.setlocale("LC_TIME", "English") # Sys.setlocale("LC_ALL", 'en_US.UTF-8')
 
 ## load scripts
 script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
@@ -56,11 +56,11 @@ registerDoSEQ(); availableCores()
 
 
 ################################################################
-#### Step 2a: For first time user: Parameter specification in three steps
+#### Step 2: define model variables & parameters
 
-## 2a-1: First, specify input data & model parameters
 InputCollect <- robyn_inputs(dt_input = dt_input
                              ,dt_holidays = dt_holidays
+
 
                              #######################
                              #### set variables ####
@@ -113,7 +113,8 @@ InputCollect <- robyn_inputs(dt_input = dt_input
 )
 
 
-## 2a-2: Second, define and add hyperparameters
+################################################################
+#### Step 3: define and add hyperparameters
 
 ## Guide to setup hyperparameters
 
@@ -176,151 +177,56 @@ hyperparameters <- list(
   #,newsletter_scales = c(0, 0.1)
 )
 
-## 2a-3: Third, add hyperparameters into robyn_inputs()
+## Add hyperparameters intu robyn_inputs()
 
 InputCollect <- robyn_inputs(InputCollect = InputCollect
                              , hyperparameters = hyperparameters)
 
 
+################################################################
+#### Step 4: Build initial model
 
-# ################################################################
-# #### Step 2b: For known parameter specification, setup in one single step
-# 
-# ## Specify hyperparameters directly before running robyn_inputs()
-# hyperparameters <- list(
-#   facebook_I_alphas = c(0.5, 3) # example bounds for alpha
-#   ,facebook_I_gammas = c(0.3, 1) # example bounds for gamma
-#   ,facebook_I_thetas = c(0, 0.3) # example bounds for theta
-#   #,facebook_I_shapes = c(0.0001, 2) # example bounds for shape
-#   #,facebook_I_scales = c(0, 0.1) # example bounds for scale
-#   
-#   ,print_S_alphas = c(0.5, 3)
-#   ,print_S_gammas = c(0.3, 1)
-#   ,print_S_thetas = c(0.1, 0.4)
-#   #,print_S_shapes = c(0.0001, 2)
-#   #,print_S_scales = c(0, 0.1)
-#   
-#   ,tv_S_alphas = c(0.5, 3)
-#   ,tv_S_gammas = c(0.3, 1)
-#   ,tv_S_thetas = c(0.3, 0.8)
-#   #,tv_S_shapes = c(0.0001, 2)
-#   #,tv_S_scales= c(0, 0.1)
-#   
-#   ,search_clicks_P_alphas = c(0.5, 3)
-#   ,search_clicks_P_gammas = c(0.3, 1)
-#   ,search_clicks_P_thetas = c(0, 0.3)
-#   #,search_clicks_P_shapes = c(0.0001, 2)
-#   #,search_clicks_P_scales = c(0, 0.1)
-#   
-#   ,ooh_S_alphas = c(0.5, 3)
-#   ,ooh_S_gammas = c(0.3, 1)
-#   ,ooh_S_thetas = c(0.1, 0.4)
-#   #,ooh_S_shapes = c(0.0001, 2)
-#   #,ooh_S_scales = c(0, 0.1)
-#   
-#   ,newsletter_alphas = c(0.5, 3)
-#   ,newsletter_gammas = c(0.3, 1)
-#   ,newsletter_thetas = c(0.1, 0.4)
-#   #,newsletter_shapes = c(0.0001, 2)
-#   #,newsletter_scales = c(0, 0.1)
-# )
-# 
-# InputCollect <- robyn_inputs(dt_input = dt_input
-#                              ,dt_holidays = dt_holidays
-#                              
-#                              ,date_var = "DATE" # date format must be "2020-01-01"
-#                              ,dep_var = "revenue" # there should be only one dependent variable
-#                              ,dep_var_type = "revenue" # "revenue" or "conversion"
-#                              
-#                              ,prophet_vars = c("trend", "season", "holiday") # "trend","season", "weekday", "holiday" are provided and case-sensitive. Recommended to at least keep Trend & Holidays
-#                              ,prophet_signs = c("default","default", "default") # c("default", "positive", and "negative"). Recommend as default. Must be same length as prophet_vars
-#                              ,prophet_country = "DE" # only one country allowed once. Including national holidays for 59 countries, whose list can be found on our githut guide
-#                              
-#                              ,context_vars = c("competitor_sales_B", "events") # typically competitors, price & promotion, temperature,  unemployment rate etc
-#                              ,context_signs = c("default", "default") # c("default", "positive", and "negative"), control the signs of coefficients for baseline variables
-#                              
-#                              ,paid_media_vars = c("tv_S","ooh_S"	,	"print_S"	,"facebook_I"	,"search_clicks_P") # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S"	,"search_clicks_P"	,"search_S") we recommend to use media exposure metrics like impressions, GRP etc for the model. If not applicable, use spend instead
-#                              ,paid_media_signs = c("positive", "positive","positive", "positive", "positive") # c("default", "positive", and "negative"). must have same length as paid_media_vars. control the signs of coefficients for media variables
-#                              ,paid_media_spends = c("tv_S","ooh_S",	"print_S"	,"facebook_S"	,"search_S") # spends must have same order and same length as paid_media_vars
-#                              
-#                              ,organic_vars = c("newsletter")
-#                              ,organic_signs = c("positive") # must have same length as organic_vars
-#                              
-#                              ,factor_vars = c("events") # specify which variables in context_vars and organic_vars are factorial
-# 
-#                              ,cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
-#                             
-#                              ,window_start = "2016-11-23"
-#                              ,window_end = "2018-08-22"
-#                              
-#                              ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
-#                              ,iterations = 2000  # number of allowed iterations per trial. 500 is recommended
-#                              
-#                              ,nevergrad_algo = "TwoPointsDE" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
-#                              ,trials = 5 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
-# 
-#                              ,hyperparameters = hyperparameters
-#                              
-#                              # ,calibration_input = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
-#                              #                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
-#                              #                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
-#                              #                        liftAbs = c(400000, 300000, 200000))
-# )
 
+OutputCollect <- robyn_run(InputCollect = InputCollect
+                           , plot_folder = robyn_object
+                           , pareto_fronts = 1
+                           , plot_pareto = F)
 
 
 ################################################################
-#### Step 3: Build initial model
+#### Step 5: Select and save the initial model
 
+## compare all model onepagers in the plot folder and select one that mostly represents your business reality
 
-OutputCollect <- robyn_run(InputCollect = InputCollect # feed in all model specification
-                           , plot_folder = robyn_object # plots will be saved in the same folder as robyn_object. Other paths possible
-                           , pareto_fronts = 3 # How many pareto fronts to be exported as model output. The higher, the more model results/ onepagers provided
-                           , plot_pareto = TRUE) # Disabling plat_pareto speeds up processing time in the end, but plots won't be saved
-
-## Besides plots: there're 4 csv output saved in the folder for further usage
-# pareto_hyperparameters.csv, hyperparameters per pareto output model
-# pareto_aggregated.csv, aggregated decomposition per independent variable of all pareto output model
-# pareto_media_transform_matrix.csv, all media transformation vectors 
-# pareto_alldecomp_matrix.csv, all decomposition vectors of independent variables 
-
-################################################################
-#### Step 4: Select and save the initial model
-
-## Compare all model onepagers in the plot folder and select one that mostly represents your business reality
-
-OutputCollect$allSolutions # get all model IDs in result
-select_model <- "2_17_3" # select one from above
-robyn_save(robyn_object = robyn_object # model object location and name
-           , select_model = select_model # selected model ID
-           , InputCollect = InputCollect # all model input
-           , OutputCollect = OutputCollect # all model output
-           )
+OutputCollect$allSolutions
+select_model <- "2_34_5"
+robyn_save(robyn_object = robyn_object
+           , select_model = select_model
+           , InputCollect = InputCollect
+           , OutputCollect = OutputCollect)
 
 
 ################################################################
-#### Step 5: Get budget allocation based on the selected model above
+#### Step 6: Get budget allocation based on the selected model above
 
 ## Budget allocator result requires further validation. Please use this result with caution.
 ## Don't interpret budget allocation result if selected model result doesn't meet business expectation
 
-OutputCollect$xDecompAgg[solID == select_model & !is.na(mean_spend)
-                         , .(rn, coef,mean_spend, mean_response, roi_mean
-                             , total_spend, total_response=xDecompAgg, roi_total, solID)] #check media summary for selected model
+OutputCollect$xDecompAgg[solID == select_model & !is.na(mean_spend), .(rn, coef,mean_spend, mean_response, roi_mean, total_spend, total_response=xDecompAgg, roi_total, solID)] #check media summary for selected model
 
 AllocatorCollect <- robyn_allocator(InputCollect = InputCollect
-                                    , OutputCollect = OutputCollect
-                                    , select_model = select_model # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
-                                    , scenario = "max_historical_response" # options are "max_historical_response", "max_response_expected_spend"
-                                    , channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as paid_media_vars
-                                    , channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
-                                    #, expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
-                                    #, expected_spend_days = 90 # specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
-                                    #, optim_algo = "SLSQP_AUGLAG" # options are "MMA_AUGLAG", "SLSQP_AUGLAG"
-                                    )
+                                    ,OutputCollect = OutputCollect
+                                    ,select_model = select_model # input one of the model IDs in model_output_collect$allSolutions to get optimisation result
+                                    ,optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
+                                    ,scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
+                                    #,expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
+                                    #,expected_spend_days = 90 # specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
+                                    ,channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as paid_media_vars
+                                    ,channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
+)
 
-# ## QA optimal response
-# select_media <- "search_clicks_P"
+## QA optimal response
+# select_media <- "facebook_I"
 # optimal_spend <- AllocatorCollect$dt_optimOut[channels== select_media, optmSpendUnit]
 # optimal_response_allocator <- AllocatorCollect$dt_optimOut[channels== select_media, optmResponseUnit]
 # optimal_response <- robyn_response(robyn_object = robyn_object
@@ -331,7 +237,7 @@ AllocatorCollect <- robyn_allocator(InputCollect = InputCollect
 
 
 ################################################################
-#### Step 6: Model refresh based on selected model and saved Robyn.RData object - Alpha
+#### Step 7: Model refresh based on selected model and saved Robyn.RData object - Alpha
 
 ## NOTE: must run robyn_save to select and save an initial model first, before refreshing below
 
@@ -339,41 +245,44 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
                        , dt_input = dt_input
                        , dt_holidays = dt_holidays
                        , refresh_steps = 13 # refresh_steps = 4 means refresh model's rolling window will move forward 4 weeks
-                       , refresh_mode = "manual" # "auto"  or "manual". auto means the refresh function will move forward until no more data available
-                       , refresh_iters = 100 # Iteration for refresh. 200 is rough estimation. We'll still figuring out what's the ideal number. 
-                       , refresh_trials = 2 # trial for refresh
+                       , refresh_mode = "auto" # "auto"  or "manual". auto means the refresh function will move forward until no more data available
+                       , refresh_iters = 200 # iteration for refresh.
+                       , refresh_trials = 5 # trial for refresh
 )
 
-## Besides plots: there're 4 csv output saved in the folder for further usage
-# report_hyperparameters.csv, hyperparameters of all selected model for reporting 
-# report_aggregated.csv, aggregated decomposition per independent variable of all selected reporting model 
-# report_media_transform_matrix.csv, all media transformation vectors  
-# report_alldecomp_matrix.csv,all decomposition vectors of independent variables 
+######## Please check plot output folders. The following 4 reporting CSVs are new and accummulated result with all previous refreshes ...
+######## ... that will be the data for reporting plots
+######## report_aggregated.csv, report_alldecomp_matrix.csv, report_hyperparameters.csv, report_media_transform_matrix.csv
 
+# QA
+# load(robyn_object)
+# length(Robyn);names(Robyn)
+# Robyn$listRefresh1 <- NULL
+# save(Robyn, file = robyn_object)
 
 ################################################################
-#### Step 7: Get budget allocation recommendation based on selected refresh runs
+#### Step 8: Get budget allocation recommendation based on selected refresh runs
 
 AllocatorCollect <- robyn_allocator(robyn_object = robyn_object
-                                    #, select_run = 0 # 0 is initial model, 1 is first refresh etc. Default to the latest refresh
-                                    , scenario = "max_historical_response" # options are "max_historical_response", "max_response_expected_spend"
-                                    , channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as paid_media_vars
-                                    , channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
+                                    # , select_run
+                                    , optim_algo = "SLSQP_AUGLAG" # "MMA_AUGLAG", "SLSQP_AUGLAG"
+                                    , scenario = "max_historical_response" # c(max_historical_response, max_response_expected_spend)
                                     #, expected_spend = 100000 # specify future spend volume. only applies when scenario = "max_response_expected_spend"
                                     #, expected_spend_days = 90 # specify period for the future spend volumne in days. only applies when scenario = "max_response_expected_spend"
-                                    #, optim_algo = "SLSQP_AUGLAG" # options are "MMA_AUGLAG", "SLSQP_AUGLAG"
-                                    )
+                                    , channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7) # must be between 0.01-1 and has same length and order as paid_media_vars
+                                    , channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5) # not recommended to 'exaggerate' upper bounds. 1.5 means channel budget can increase to 150% of current level
+)
 
 
 ################################################################
-#### Step 8: get marginal returns
+#### Step 9: get marginal returns
 
 ## Example of how to get marginal ROI of next 1000$ from the 80k spend level for search channel
 
 # get response for 80k
 Spend1 <- 80000
 Response1 <- robyn_response(robyn_object = robyn_object
-                            #, select_run = 1 # 0 is initial model, 1 is first refresh etc. Default to the latest refresh
+                            #, select_run = 1 # 2 means the sedond refresh model. 0 means the initial model
                             , paid_media_var = "search_clicks_P"
                             , Spend = Spend1)
 Response1/Spend1 # ROI for search 80k
@@ -381,7 +290,7 @@ Response1/Spend1 # ROI for search 80k
 # get response for 81k
 Spend2 <- Spend1+1000
 Response2 <- robyn_response(robyn_object = robyn_object
-                            #, select_run = 1 0 is initial model, 1 is first refresh etc. Default to the latest refresh
+                            #, select_run = 1
                             , paid_media_var = "search_clicks_P"
                             , Spend = Spend2)
 Response2/Spend2 # ROI for search 81k
@@ -408,3 +317,6 @@ robyn_save(robyn_object = robyn_object
            , select_model = select_model
            , InputCollect = InputCollect
            , OutputCollect = OutputCollectFixed)
+
+
+# remotes::install_github("laresbernardo/Robyn")

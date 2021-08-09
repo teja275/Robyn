@@ -1,0 +1,26 @@
+{
+    "id": "F47B263D",
+    "path": "~/Documents/GitHub/Robyn/R/model.R",
+    "project_path": "R/model.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1628284938667.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "42,52",
+        "scrollLine": "32"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1628285447,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1628285447296,
+    "read_only": false,
+    "read_only_alternatives": []
+}
