@@ -125,8 +125,8 @@ InputCollect <- robyn_inputs(dt_input = dt_input
 ## 2. get guidance for setting hyperparameter bounds:
 # For geometric adstock, use theta, alpha & gamma. For weibull adstock, use shape, scale, alpha, gamma
 # theta: In geometric adstock, theta is decay rate. guideline for usual media genre: TV c(0.3, 0.8), OOH/Print/Radio c(0.1, 0.4), digital c(0, 0.3)
-# shape: In weibull adstock, shape controls the decay shape. Recommended c(0.0001, 2). The larger, the more S-shape. The smaller, the more L-shape
-# scale: In weibull adstock, scale controls the decay inflexion point. Very conservative recommended bounce c(0, 0.1), becausee scale can increase adstocking half-life greaetly
+# shape: In weibull adstock, shape controls the decay shape. Recommended c(0.0001, 2). The larger, the more S-shape. The smaller, the more L-shape. Channel-type specific values still to be investigated
+# scale: In weibull adstock, scale controls the decay inflexion point. Very conservative recommended bounce c(0, 0.1), becausee scale can increase adstocking half-life greaetly. Channel-type specific values still to be investigated
 # alpha: In s-curve transformation with hill function, alpha controls the shape between exponential and s-shape. Recommended c(0.5, 3). The larger the alpha, the more S-shape. The smaller, the more C-shape
 # gamma: In s-curve transformation with hill function, gamma controls the inflexion point. Recommended bounce c(0.3, 1). The larger the gamma, the later the inflection point in the response curve
 
@@ -180,7 +180,6 @@ hyperparameters <- list(
 
 InputCollect <- robyn_inputs(InputCollect = InputCollect
                              , hyperparameters = hyperparameters)
-
 
 
 # ################################################################
@@ -339,9 +338,9 @@ Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.
                        , dt_input = dt_input
                        , dt_holidays = dt_holidays
                        , refresh_steps = 13 # refresh_steps = 4 means refresh model's rolling window will move forward 4 weeks
-                       , refresh_mode = "manual" # "auto"  or "manual". auto means the refresh function will move forward until no more data available
-                       , refresh_iters = 100 # Iteration for refresh. 200 is rough estimation. We'll still figuring out what's the ideal number. 
-                       , refresh_trials = 2 # trial for refresh
+                       , refresh_mode = "auto" # "auto"  or "manual". auto means the refresh function will move forward until no more data available
+                       , refresh_iters = 200 # Iteration for refresh. 200 is rough estimation. We'll still figuring out what's the ideal number. 
+                       , refresh_trials = 5 # trial for refresh
 )
 
 ## Besides plots: there're 4 csv output saved in the folder for further usage
