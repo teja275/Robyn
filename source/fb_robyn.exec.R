@@ -56,14 +56,14 @@ registerDoSEQ(); availableCores()
 
 
 ################################################################
-#### Step 2a: For first time user: Parameter specification in three steps
+#### Step 2a: For first time user: Model specification in 4 steps
 
-## 2a-1: First, specify input data & model parameters
+#### 2a-1: First, specify input data & model parameters
+
 InputCollect <- robyn_inputs(dt_input = dt_input
                              ,dt_holidays = dt_holidays
 
-                             #######################
-                             #### set variables ####
+                             ### set variables
 
                              ,date_var = "DATE" # date format must be "2020-01-01"
                              ,dep_var = "revenue" # there should be only one dependent variable
@@ -85,12 +85,10 @@ InputCollect <- robyn_inputs(dt_input = dt_input
 
                              ,factor_vars = c("events") # specify which variables in context_vars and organic_vars are factorial
 
-
-                             ##############################
-                             #### set model parameters ####
+                             ### set model parameters
 
                              ## set cores for parallel computing
-                             ,cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
+                             ,cores = 6 # I am using 6 cores from 8 on my local machine. Use availableCores() to find out cores
 
                              ## set rolling window start
                              ,window_start = "2016-11-23"
@@ -98,22 +96,15 @@ InputCollect <- robyn_inputs(dt_input = dt_input
 
                              ## set model core features
                              ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
-                             ,iterations = 2000  # number of allowed iterations per trial. 500 is recommended
+                             ,iterations = 2000  # number of allowed iterations per trial. 2000 is recommended
 
-                             ,nevergrad_algo = "TwoPointsDE" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
-                             ,trials = 5 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
-                             ## Time estimation: with geometric adstock, 500 iterations * 40 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
-
-                             #,hyperparameters = hyperparameters
-
-                             # ,calibration_input = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
-                             #                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
-                             #                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
-                             #                        liftAbs = c(400000, 300000, 200000))
+                             ,nevergrad_algo = "TwoPointsDE" # recommended algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
+                             ,trials = 5 # number of allowed iterations per trial. 5 is recommended without calibration, 10 with calibration.
+                             ## Time estimation: with geometric adstock, 2000 iterations * 5 trials and 6 cores, it takes less than 1 hour. Weibull takes at least twice as much time.
 )
 
 
-## 2a-2: Second, define and add hyperparameters
+#### 2a-2: Second, define and add hyperparameters
 
 ## Guide to setup hyperparameters
 
@@ -133,6 +124,7 @@ InputCollect <- robyn_inputs(dt_input = dt_input
 # helper plots: set plot to TRUE for transformation examples
 plot_adstock(FALSE) # adstock transformation example plot, helping you understand geometric/theta and weibull/shape/scale transformation
 plot_saturation(FALSE) # s-curve transformation example plot, helping you understand hill/alpha/gamma transformatio
+
 
 ## 3. set each hyperparameter bounds. They either contains two values e.g. c(0, 0.5), or only one value (in which case you've "fixed" that hyperparameter)
 
@@ -176,53 +168,28 @@ hyperparameters <- list(
   #,newsletter_scales = c(0, 0.1)
 )
 
-## 2a-3: Third, add hyperparameters into robyn_inputs()
+
+#### 2a-3: Third, add hyperparameters into robyn_inputs()
 
 InputCollect <- robyn_inputs(InputCollect = InputCollect
                              , hyperparameters = hyperparameters)
 
 
-# ################################################################
-# #### Step 2b: For known parameter specification, setup in one single step
+#### 2a-4: Fourth (optional), model calibration / add experimental input
+
+# dt_calibration <- data.table(channel = c("facebook_I",  "tv_S", "facebook_I") # channel name must in paid_media_vars
+#                              , liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")) # liftStartDate must be within input data range
+#                              , liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")) # liftEndDate must be within input data range
+#                              , liftAbs = c(400000, 300000, 200000)) # Provided value must be tested on same campaign level in model and same metric as dep_var_type
 # 
-# ## Specify hyperparameters directly before running robyn_inputs()
-# hyperparameters <- list(
-#   facebook_I_alphas = c(0.5, 3) # example bounds for alpha
-#   ,facebook_I_gammas = c(0.3, 1) # example bounds for gamma
-#   ,facebook_I_thetas = c(0, 0.3) # example bounds for theta
-#   #,facebook_I_shapes = c(0.0001, 2) # example bounds for shape
-#   #,facebook_I_scales = c(0, 0.1) # example bounds for scale
-#   
-#   ,print_S_alphas = c(0.5, 3)
-#   ,print_S_gammas = c(0.3, 1)
-#   ,print_S_thetas = c(0.1, 0.4)
-#   #,print_S_shapes = c(0.0001, 2)
-#   #,print_S_scales = c(0, 0.1)
-#   
-#   ,tv_S_alphas = c(0.5, 3)
-#   ,tv_S_gammas = c(0.3, 1)
-#   ,tv_S_thetas = c(0.3, 0.8)
-#   #,tv_S_shapes = c(0.0001, 2)
-#   #,tv_S_scales= c(0, 0.1)
-#   
-#   ,search_clicks_P_alphas = c(0.5, 3)
-#   ,search_clicks_P_gammas = c(0.3, 1)
-#   ,search_clicks_P_thetas = c(0, 0.3)
-#   #,search_clicks_P_shapes = c(0.0001, 2)
-#   #,search_clicks_P_scales = c(0, 0.1)
-#   
-#   ,ooh_S_alphas = c(0.5, 3)
-#   ,ooh_S_gammas = c(0.3, 1)
-#   ,ooh_S_thetas = c(0.1, 0.4)
-#   #,ooh_S_shapes = c(0.0001, 2)
-#   #,ooh_S_scales = c(0, 0.1)
-#   
-#   ,newsletter_alphas = c(0.5, 3)
-#   ,newsletter_gammas = c(0.3, 1)
-#   ,newsletter_thetas = c(0.1, 0.4)
-#   #,newsletter_shapes = c(0.0001, 2)
-#   #,newsletter_scales = c(0, 0.1)
-# )
+# InputCollect <- robyn_inputs(InputCollect = InputCollect
+#                              , calibration_input = dt_calibration)
+
+
+################################################################
+#### Step 2b: For known model specification, setup in one single step
+
+# ## Specify hyperparameters as in 2a-2 and optionally calibration as in 2a-4 and provide them directly in robyn_inputs()
 # 
 # InputCollect <- robyn_inputs(dt_input = dt_input
 #                              ,dt_holidays = dt_holidays
@@ -247,41 +214,37 @@ InputCollect <- robyn_inputs(InputCollect = InputCollect
 #                              
 #                              ,factor_vars = c("events") # specify which variables in context_vars and organic_vars are factorial
 # 
-#                              ,cores = 6 # I am using 6 cores from 8 on my local machine. Use detectCores() to find out cores
+#                              ,cores = 6 # I am using 6 cores from 8 on my local machine. Use availableCores() to find out cores
 #                             
 #                              ,window_start = "2016-11-23"
 #                              ,window_end = "2018-08-22"
 #                              
 #                              ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
-#                              ,iterations = 2000  # number of allowed iterations per trial. 500 is recommended
+#                              ,iterations = 2000  # number of allowed iterations per trial. 2000 is recommended
 #                              
 #                              ,nevergrad_algo = "TwoPointsDE" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
-#                              ,trials = 5 # number of allowed iterations per trial. 40 is recommended without calibration, 100 with calibration.
+#                              ,trials = 5 # number of allowed iterations per trial. 5 is recommended without calibration, 10 with calibration.
 # 
-#                              ,hyperparameters = hyperparameters
+#                              ,hyperparameters = hyperparameters # as in 2a-2 above
 #                              
-#                              # ,calibration_input = data.table(channel = c("facebook_I",  "tv_S", "facebook_I"),
-#                              #                        liftStartDate = as.Date(c("2018-05-01", "2017-11-27", "2018-07-01")),
-#                              #                        liftEndDate = as.Date(c("2018-06-10", "2017-12-03", "2018-07-20")),
-#                              #                        liftAbs = c(400000, 300000, 200000))
+#                              ,calibration_input = dt_calibration # as in 2a-4 above
 # )
-
 
 
 ################################################################
 #### Step 3: Build initial model
-
 
 OutputCollect <- robyn_run(InputCollect = InputCollect # feed in all model specification
                            , plot_folder = robyn_object # plots will be saved in the same folder as robyn_object. Other paths possible
                            , pareto_fronts = 3 # How many pareto fronts to be exported as model output. The higher, the more model results/ onepagers provided
                            , plot_pareto = TRUE) # Disabling plat_pareto speeds up processing time in the end, but plots won't be saved
 
-## Besides plots: there're 4 csv output saved in the folder for further usage
+## Besides onepager plots: there're 4 csv output saved in the folder for further usage
 # pareto_hyperparameters.csv, hyperparameters per pareto output model
 # pareto_aggregated.csv, aggregated decomposition per independent variable of all pareto output model
 # pareto_media_transform_matrix.csv, all media transformation vectors 
 # pareto_alldecomp_matrix.csv, all decomposition vectors of independent variables 
+
 
 ################################################################
 #### Step 4: Select and save the initial model
@@ -289,7 +252,7 @@ OutputCollect <- robyn_run(InputCollect = InputCollect # feed in all model speci
 ## Compare all model onepagers in the plot folder and select one that mostly represents your business reality
 
 OutputCollect$allSolutions # get all model IDs in result
-select_model <- "2_7_3" # select one from above
+select_model <- "2_9_4" # select one from above
 robyn_save(robyn_object = robyn_object # model object location and name
            , select_model = select_model # selected model ID
            , InputCollect = InputCollect # all model input
@@ -333,6 +296,7 @@ AllocatorCollect <- robyn_allocator(InputCollect = InputCollect
 #### Step 6: Model refresh based on selected model and saved Robyn.RData object - Alpha
 
 ## NOTE: must run robyn_save to select and save an initial model first, before refreshing below
+## The robyn_refresh() function is suitable for 
 
 Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
                        , dt_input = dt_input
