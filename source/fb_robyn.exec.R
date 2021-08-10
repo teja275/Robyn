@@ -289,7 +289,7 @@ OutputCollect <- robyn_run(InputCollect = InputCollect # feed in all model speci
 ## Compare all model onepagers in the plot folder and select one that mostly represents your business reality
 
 OutputCollect$allSolutions # get all model IDs in result
-select_model <- "2_17_3" # select one from above
+select_model <- "2_7_3" # select one from above
 robyn_save(robyn_object = robyn_object # model object location and name
            , select_model = select_model # selected model ID
            , InputCollect = InputCollect # all model input
