@@ -296,7 +296,10 @@ AllocatorCollect <- robyn_allocator(InputCollect = InputCollect
 #### Step 6: Model refresh based on selected model and saved Robyn.RData object - Alpha
 
 ## NOTE: must run robyn_save to select and save an initial model first, before refreshing below
-## The robyn_refresh() function is suitable for 
+## The robyn_refresh() function is suitable for updating within "reasonable periods"
+## Two situations are considered better to rebuild model: 
+## 1, most data is new. If initial model has 100 weeks and 80 weeks new data is added in refresh, it might be better to rebuild the model
+## 2, new variables are added
 
 Robyn <- robyn_refresh(robyn_object = robyn_object # the location of your Robyn.RData object
                        , dt_input = dt_input
