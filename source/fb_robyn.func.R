@@ -56,10 +56,10 @@ robyn_inputs <- function(dt_input
                          ,window_end = NULL
                          
                          ## set model core features
-                         ,adstock = "geometric" # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
+                         ,adstock = NULL # geometric or weibull. weibull is more flexible, yet has one more parameter and thus takes longer
                          ,iterations = 2000  # number of allowed iterations per trial. 2000 is recommended
                          
-                         ,nevergrad_algo = "DiscreteOnePlusOne" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
+                         ,nevergrad_algo = "TwoPointsDE" # selected algorithm for Nevergrad, the gradient-free optimisation library https://facebookresearch.github.io/nevergrad/index.html
                          ,trials = 5 # number of allowed iterations per trial. 5 is recommended without calibration, 10 with calibration.
                          ## Time estimation: with geometric adstock, 2000 iterations * 5 trials and 6 cores, it half hour. Weibull takes at least twice as much time.
                          
@@ -344,9 +344,9 @@ robyn_inputs <- function(dt_input
     
     # when added hyperparameters 
     global_name <- c("thetas",  "shapes",  "scales",  "alphas",  "gammas",  "lambdas")
-    if (adstock == "geometric") {
+    if (InputCollect$adstock == "geometric") {
       local_name <- sort(apply(expand.grid(InputCollect$all_media, global_name[global_name %like% 'thetas|alphas|gammas']), 1, paste, collapse="_"))
-    } else if (adstock == "weibull") {
+    } else if (InputCollect$adstock == "weibull") {
       local_name <- sort(apply(expand.grid(InputCollect$all_media, global_name[global_name %like% 'shapes|scales|alphas|gammas']), 1, paste, collapse="_"))
     }
     
