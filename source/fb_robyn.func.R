@@ -365,6 +365,7 @@ robyn_inputs <- function(dt_input
         } else if (InputCollect$iterations < 2000 | InputCollect$trials < 10) {
           message("you are calibrating MMM. we recommend to run at least 2000 iterations per trial and at least 10 trials at the beginning")
         }
+        InputCollect$calibration_input <- calibration_input
       } else {
         if (InputCollect$iterations < 2000 | InputCollect$trials < 5) {message("we recommend to run at least 2000 iterations per trial and at least 5 trials at the beginning")}
       }
