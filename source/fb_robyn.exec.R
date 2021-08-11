@@ -17,6 +17,10 @@ rm(list=ls()); gc()
 ## set locale for non English R
 # Sys.setlocale("LC_TIME", "C") 
 
+## force multicore when using RStudio
+Sys.setenv(R_FUTURE_FORK_ENABLE="true")
+options(future.fork.enable = TRUE)
+
 ## load scripts
 script_path = substr(rstudioapi::getActiveDocumentContext()$path, start = 1, stop = max(gregexpr("/", rstudioapi::getActiveDocumentContext()$path)[[1]]))
 source(paste(script_path, "fb_robyn.func.R", sep=""))
