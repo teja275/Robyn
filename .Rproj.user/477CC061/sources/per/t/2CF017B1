@@ -1,0 +1,26 @@
+{
+    "id": "2CF017B1",
+    "path": "~/Documents/GitHub/Robyn/R/checks.R",
+    "project_path": "R/checks.R",
+    "type": "r_source",
+    "hash": "296010879",
+    "contents": "",
+    "dirty": false,
+    "created": 1628929411737.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "295,5",
+        "scrollLine": "285"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1628855220,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1628855220,
+    "read_only": false,
+    "read_only_alternatives": []
+}

@@ -725,7 +725,7 @@ robyn_engineering <- function(InputCollect = InputCollect
       #   modelRecurrance <- add_regressor(modelRecurrance, addreg)
       # }
       
-      dt_ohe <- as.data.table(model.matrix(y ~., dt_regressors[, c("y",factor_vars), with =FALSE])[,-1])
+      dt_ohe <- as.data.table(model.matrix(y ~., dt_regressors[, c("y",factor_vars), with =FALSE]))[,-1]
       ohe_names <- names(dt_ohe)
       for (addreg in ohe_names) {
         modelRecurrance <- add_regressor(modelRecurrance, addreg)
