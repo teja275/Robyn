@@ -2226,7 +2226,7 @@ robyn_run <- function(InputCollect
       }
       dt_scurvePlotMean[, solID:= uniqueSol[j]]
       
-      p4 <- ggplot(data= dt_scurvePlot, aes(x=spend, y=response, color = channel)) +
+      p4 <- ggplot(data= dt_scurvePlot[channel %in% InputCollect$paid_media_vars], aes(x=spend, y=response, color = channel)) +
         geom_line() +
         geom_point(data = dt_scurvePlotMean, aes(x=mean_spend, y=mean_response, color = channel)) +
         geom_text(data = dt_scurvePlotMean, aes(x=mean_spend, y=mean_response,  label = round(mean_spend,0)), show.legend = FALSE, hjust = -0.2)+
