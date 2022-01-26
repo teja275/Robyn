@@ -27,4 +27,4 @@ COPY /install_robyn.R /install_robyn.R
 ## install packages
 RUN Rscript /install_robyn.R
 
-COPY /demo_docker.R /home/
+COPY /demo_docker.R /home/guest/
