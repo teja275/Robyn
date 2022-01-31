@@ -54,14 +54,19 @@ options(future.fork.enable = TRUE)
 #### Step 1: load data
 
 ## Check simulated dataset or load your own dataset
-data("dt_simulated_weekly")
-head(dt_simulated_weekly)
+## data("dt_simulated_weekly")
+## head(dt_simulated_weekly)
+
 
 ## Check holidays from Prophet
 # 59 countries included. If your country is not included, please manually add it.
 # Tipp: any events can be added into this table, school break, events etc.
 data("dt_prophet_holidays")
 head(dt_prophet_holidays)
+dt_actual_daily = read.csv("/Users/bhanu/Documents/Projects/airflow/data_science/robyn_exploration/raw_data/daily_data/marketing_data_cleaned_100122222111.csv")
+dt_actual_daily$Date = as.Date(dt_actual_daily$Date, "%Y-%m-%d")
+head(dt_actual_daily)
+
 
 ## Set robyn_object. It must have extension .RDS. The object name can be different than Robyn:
 robyn_object <- "~/Desktop/MyRobyn.RDS"
@@ -73,51 +78,59 @@ robyn_object <- "~/Desktop/MyRobyn.RDS"
 
 # Run ?robyn_inputs to check parameter definition
 InputCollect <- robyn_inputs(
-  dt_input = dt_simulated_weekly
+  dt_input = dt_actual_daily
   ,dt_holidays = dt_prophet_holidays
 
   ### set variables
 
-  ,date_var = "DATE" # date format must be "2020-01-01"
-  ,dep_var = "revenue" # there should be only one dependent variable
+  ,date_var = "Date" # date format must be "2020-01-01"
+  ,dep_var = "gmv" # there should be only one dependent variable
   ,dep_var_type = "revenue" # "revenue" or "conversion"
 
   ,prophet_vars = c("trend", "season", "holiday") # "trend","season", "weekday", "holiday"
   # are provided and case-sensitive. Recommended to at least keep Trend & Holidays
   ,prophet_signs = c("default","default", "default") # c("default", "positive", and "negative").
   # Recommend as default.Must be same length as prophet_vars
-  ,prophet_country = "DE"# only one country allowed once. Including national holidays
+  ,prophet_country = "US"# only one country allowed once. Including national holidays
   # for 59 countries, whose list can be found on our github guide
 
-  ,context_vars = c("competitor_sales_B", "events") # typically competitors, price &
+  #,context_vars = c("competitor_sales_B", "events") # typically competitors, price &
   # promotion, temperature, unemployment rate etc
-  ,context_signs = c("default", "default") # c("default", " positive", and "negative"),
+  #,context_signs = c("default", "default") # c("default", " positive", and "negative"),
   # control the signs of coefficients for baseline variables
 
-  ,paid_media_vars = c("tv_S", "ooh_S"	,	"print_S"	,"facebook_I" ,"search_clicks_P")
+  ,paid_media_vars = c("fb_retargeting", "fb_prospecting", "G_Branded_Search", 
+                       "G_Nonbrand_Search", "G_Shopping", "B_Branded_Search",
+                       "B_Shopping","Pinterest", "affiliate_spend", 
+                       "connexity_spend", "magazine_spend", "print_spend", 
+                       "display_spend", "taboola_spend", "spons_spend", 
+                       "reddit_spend", "quora_spend")
   # c("tv_S"	,"ooh_S",	"print_S"	,"facebook_I", "facebook_S","search_clicks_P"	,"search_S")
   # we recommend to use media exposure metrics like impressions, GRP etc for the model.
   # If not applicable, use spend instead
-  ,paid_media_signs = c("positive", "positive","positive", "positive", "positive")
+  ,paid_media_signs = c("positive", "positive","positive", "positive", 
+                        "positive", "positive", "positive", "positive",
+                        "positive", "positive", "positive", "positive",
+                        "positive", "positive", "positive", "positive",
+                        "positive")
   # c("default", "positive", and "negative"). must have same length as paid_media_vars.
   # Controls the signs of coefficients for media variables
   ,paid_media_spends = c("tv_S","ooh_S",	"print_S"	,"facebook_S", "search_S")
   # spends must have same order and same length as paid_media_vars
 
-  ,organic_vars = c("newsletter")
-  ,organic_signs = c("positive") # must have same length as organic_vars
-
-  ,factor_vars = c("events") # specify which variables in context_vars and
+  , organic_vars = c("emails_count", "organic_search_count")
+  , organic_signs = c("positive", "positive") # must have same length as organic_vars
+  #, factor_vars = c("events") # specify which variables in context_vars and
   # organic_vars are factorial
 
   ### set model parameters
 
   ## set cores for parallel computing
-  ,cores = 6 # I am using 6 cores from 8 on my local machine. Use future::availableCores() to find out cores
+  ,cores = 8 # I am using 6 cores from 8 on my local machine. Use future::availableCores() to find out cores
 
   ## set rolling window start
-  ,window_start = "2016-11-23"
-  ,window_end = "2018-08-22"
+  ,window_end = "2021-12-14"
+  ,window_start = "2019-09-01"
 
   ## set model core features
   ,adstock = "geometric" # geometric, weibull_cdf or weibull_pdf. Both weibull adstocks are more flexible
@@ -199,29 +212,81 @@ hyper_names(adstock = InputCollect$adstock, all_media = InputCollect$all_media)
 
 # Example hyperparameters for Geometric adstock
 hyperparameters <- list(
-  facebook_I_alphas = c(0.5, 3)
-  ,facebook_I_gammas = c(0.3, 1)
-  ,facebook_I_thetas = c(0, 0.3)
+  fb_retargeting_alphas = c(0.5, 3)
+  ,fb_retargeting_gammas = c(0.3, 1)
+  ,fb_retargeting_thetas = c(0, 0.3)
+  
+  ,fb_prospecting_alphas = c(0.5, 3)
+  ,fb_prospecting_gammas = c(0.3, 1)
+  ,fb_prospecting_thetas = c(0, 0.3)
+  
+  ,G_Branded_Search_alphas = c(0.5, 3)
+  ,G_Branded_Search_gammas = c(0.3, 1)
+  ,G_Branded_Search_thetas = c(0, 0.3)
+  
+  ,G_Nonbrand_Search_alphas = c(0.5, 3)
+  ,G_Nonbrand_Search_gammas = c(0.3, 1)
+  ,G_Nonbrand_Search_thetas = c(0, 0.3)
+  
+  ,G_Shopping_alphas = c(0.5, 3)
+  ,G_Shopping_gammas = c(0.3, 1)
+  ,G_Shopping_thetas = c(0, 0.3)
+  
+  ,B_Branded_Search_alphas = c(0.5, 3)
+  ,B_Branded_Search_gammas = c(0.3, 1)
+  ,B_Branded_Search_thetas = c(0, 0.3)
+  
+  ,B_Shopping_alphas = c(0.5, 3)
+  ,B_Shopping_gammas = c(0.3, 1)
+  ,B_Shopping_thetas = c(0, 0.3)
+  
+  ,Pinterest_alphas = c(0.5, 3)
+  ,Pinterest_gammas = c(0.3, 1)
+  ,Pinterest_thetas = c(0, 0.3)
+  
+  ,affiliate_spend_alphas = c(0.5, 3)
+  ,affiliate_spend_gammas = c(0.3, 1)
+  ,affiliate_spend_thetas = c(0, 0.3)
 
-  ,print_S_alphas = c(0.5, 3)
-  ,print_S_gammas = c(0.3, 1)
-  ,print_S_thetas = c(0.1, 0.4)
-
-  ,tv_S_alphas = c(0.5, 3)
-  ,tv_S_gammas = c(0.3, 1)
-  ,tv_S_thetas = c(0.3, 0.8)
-
-  ,search_clicks_P_alphas = c(0.5, 3)
-  ,search_clicks_P_gammas = c(0.3, 1)
-  ,search_clicks_P_thetas = c(0, 0.3)
-
-  ,ooh_S_alphas = c(0.5, 3)
-  ,ooh_S_gammas = c(0.3, 1)
-  ,ooh_S_thetas = c(0.1, 0.4)
-
-  ,newsletter_alphas = c(0.5, 3)
-  ,newsletter_gammas = c(0.3, 1)
-  ,newsletter_thetas = c(0.1, 0.4)
+  ,connexity_spend_alphas = c(0.5, 3)
+  ,connexity_spend_gammas = c(0.3, 1)
+  ,connexity_spend_thetas = c(0, 0.3)
+  
+  ,magazine_spend_alphas = c(0.5, 3)
+  ,magazine_spend_gammas = c(0.3, 1)
+  ,magazine_spend_thetas = c(0, 0.3)
+  
+  ,print_spend_alphas = c(0.5, 3)
+  ,print_spend_gammas = c(0.3, 1)
+  ,print_spend_thetas = c(0, 0.3)
+  
+  ,display_spend_alphas = c(0.5, 3)
+  ,display_spend_gammas = c(0.3, 1)
+  ,display_spend_thetas = c(0, 0.3)
+  
+  ,taboola_spend_alphas = c(0.5, 3)
+  ,taboola_spend_gammas = c(0.3, 1)
+  ,taboola_spend_thetas = c(0, 0.3)
+  
+  ,spons_spend_alphas = c(0.5, 3)
+  ,spons_spend_gammas = c(0.3, 1)
+  ,spons_spend_thetas = c(0, 0.3)
+  
+  ,reddit_spend_alphas = c(0.5, 3)
+  ,reddit_spend_gammas = c(0.3, 1)
+  ,reddit_spend_thetas = c(0, 0.3)
+  
+  ,quora_spend_alphas = c(0.5, 3)
+  ,quora_spend_gammas = c(0.3, 1)
+  ,quora_spend_thetas = c(0, 0.3)
+  
+  ,emails_count_alphas = c(0.5, 3)
+  ,emails_count_gammas = c(0.3, 1)
+  ,emails_count_thetas = c(0, 0.3)
+  
+  ,organic_search_count_alphas = c(0.5, 3)
+  ,organic_search_count_gammas = c(0.3, 1)
+  ,organic_search_count_thetas = c(0, 0.3)
 )
 
 # Example hyperparameters for Weibull CDF adstock
@@ -355,8 +420,8 @@ AllocatorCollect <- robyn_allocator(
   , OutputCollect = OutputCollect
   , select_model = select_model
   , scenario = "max_historical_response"
-  , channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7)
-  , channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5)
+  , channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7)
+  , channel_constr_up = c(1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.2, 1.5, 1.5, 1.5, 1.5, 1.5, 1.2, 1.5, 1.5, 1.5, 1.5)
 )
 
 # View allocator result. Last column "optmResponseUnitTotalLift" is the total response lift.
@@ -370,8 +435,8 @@ AllocatorCollect <- robyn_allocator(
   , OutputCollect = OutputCollect
   , select_model = select_model
   , scenario = "max_response_expected_spend"
-  , channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7)
-  , channel_constr_up = c(1.2, 1.5, 1.5, 1.5, 1.5)
+  , channel_constr_low = c(0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7)
+  , channel_constr_up = c(1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.2, 1.5, 1.5, 1.5, 1.5, 1.5, 1.2, 1.5, 1.5, 1.5, 1.5)
   , expected_spend = 1000000 # Total spend to be simulated
   , expected_spend_days = 7 # Duration of expected_spend in days
 )
@@ -406,7 +471,7 @@ AllocatorCollect$dt_optimOut
 # Run ?robyn_refresh to check parameter definition
 Robyn <- robyn_refresh(
   robyn_object = robyn_object
-  , dt_input = dt_simulated_weekly
+  , dt_input = dt_actual_daily
   , dt_holidays = dt_prophet_holidays
   , refresh_steps = 13
   , refresh_mode = "auto"
